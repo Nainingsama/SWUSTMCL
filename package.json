@@ -1,0 +1,32 @@
+{
+  "name": "swustmcl",
+  "productName": "SWUSTMCL",
+  "version": "1.0.0",
+  "description": "星启 SWUSTMCL — 西南科技大学 Minecraft 启动器",
+  "main": "main/main.js",
+  "author": "SWUSTMCL Contributors",
+  "license": "MIT",
+  "homepage": "https://github.com/Nainingsama/SWUSTMCL",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "test": "node test/run-all.js",
+    "build:win": "node scripts/build-win.js"
+  },
+  "keywords": [
+    "minecraft",
+    "launcher",
+    "swust",
+    "electron"
+  ],
+  "dependencies": {
+    "adm-zip": "^0.5.16"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Nainingsama/SWUSTMCL.git"
+  }
+}
