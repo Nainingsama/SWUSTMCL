@@ -1,18 +1,12 @@
 {
-  "version": "1.2.0",
-  "notes": "1.2.0：新增启动器「域」——可添加站点型域、缓存 manifest、浏览与下载域内资源。",
+  "version": "1.2.1",
+  "notes": "1.2.1：域改为启动器当前环境；域内账号、公告、服务器与资源统一由站点接管；CurseForge 搜索由皮肤站中转，玩家无需填写 Key。",
   "assets": [
     {
-      "name": "SWUSTMCL-1.2.0-win-x64.zip",
-      "size": 124689962,
-      "sha256": "52712e5a6a03a7f4e0873e1be29fc7adab534f47c04600bf4750b2d0409fe414",
-      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.0/SWUSTMCL-1.2.0-win-x64.zip"
-    },
-    {
-      "name": "SWUSTMCL-1.2.0-Setup-x64.exe",
-      "size": 94382146,
-      "sha256": "dc6a16797acde52a68513c424bd98a7a693f061242cf0ba52b2db6858eae8779",
-      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.0/SWUSTMCL-1.2.0-Setup-x64.exe"
+      "name": "SWUSTMCL-1.2.1-win-x64.zip",
+      "size": 124635739,
+      "sha256": "05eec728177bd0100db3aac97980e60ebdcfa902b4c66dd428b67803754e7814",
+      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.1/SWUSTMCL-1.2.1-win-x64.zip"
     }
   ]
 }
