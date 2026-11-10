@@ -9,6 +9,16 @@
   let state = { source: 'modrinth', type: 'mod', query: '', hits: [], total: 0, effectiveGv: '' };
   let autoLoaded = false;
   let filters = { instance: '', gameVersion: '', loader: '' };
+  let lastDomainId = null;
+
+  /** 当前域是否提供 CurseForge 中转（由皮肤站持有 Key）。 */
+  function cfDomain() {
+    const domain = window.DomainContext && window.DomainContext.active ? window.DomainContext.active() : null;
+    if (!domain || domain.personal) return null;
+    const cf = (domain.manifest || {}).curseforge;
+    if (!cf || !cf.relayUrl) return null;
+    return { domain, configured: Boolean(cf.configured) };
+  }
 
   function iconSvg(name, size = 16) {
     const P = {
@@ -28,6 +38,17 @@
   function render(root) {
     rootEl = root;
     window.Dom.clear(root);
+    const activeDomain = window.DomainContext && window.DomainContext.active ? window.DomainContext.active() : null;
+    const domainKey = (activeDomain && activeDomain.id) || 'personal';
+    if (lastDomainId !== domainKey) {
+      lastDomainId = domainKey;
+      state.hits = [];
+      state.total = 0;
+      state.effectiveGv = '';
+      autoLoaded = false;
+      page = 1;
+    }
+    if (window.DomainContext && window.DomainContext.renderResources) window.DomainContext.renderResources(root);
 
     const search = h('input.input', {
       placeholder: '搜索模组 / 光影 / 材质包…（回车立即搜索）',
@@ -54,9 +75,13 @@
     filters.instance = filters.instance || (window.Store.get('installed') || [])[0]?.id || '';
     const instanceSel = h('select.select', { style: { maxWidth: '220px' }, onchange: (e) => updateFilters(e) });
     fillInstances(instanceSel);
+    const cf = cfDomain();
 
     root.append(
-      h('div.section-title', null, '资源下载', h('span.hint', null, 'Modrinth 全功能 · CurseForge 需在设置里填写 API Key')),
+      h('div.section-title', null, '资源下载',
+        h('span.hint', null, cf
+          ? (cf.configured ? 'Modrinth 全功能 · CurseForge 由当前域提供' : 'Modrinth 全功能 · 当前域未配置 CurseForge')
+          : 'Modrinth 全功能 · CurseForge 需在设置里填写 API Key')),
       h('div.res-toolbar', null, search, sourceSeg, typeSeg, instanceSel,
         h('span.spacer'),
         h('div.seg', null,
@@ -80,8 +105,9 @@
     }
 
     updateFilters();
+    if (state.hits.length) drawHits();
     // 默认加载热门内容（空关键词按下载量排序）
-    if (!state.hits.length && !autoLoaded) {
+    else if (!autoLoaded) {
       autoLoaded = true;
       doSearch();
     }
@@ -168,7 +194,12 @@
       // 译名后 state.query 已是英文原名；req 第二个参数是版本过滤（gv），不能传查询词
       // 按所选源查询：CurseForge 需要 Key（发布版内置），Modrinth 恒可用
       if (state.source === 'curseforge') {
-        if (!window.Store.get('cfReady')) throw new Error('CurseForge 未启用：请在设置里填写 API Key（发布版自带）后再选 CurseForge 源');
+        const cfCtx = cfDomain();
+        if (!window.Store.get('cfReady')) {
+          throw new Error(cfCtx
+            ? '当前域尚未配置 CurseForge API Key，请联系域管理员'
+            : 'CurseForge 未启用：请在设置里填写 API Key');
+        }
         jobs.push(req('curseforge', gv, offset));
       } else {
         jobs.push(req('modrinth', gv, offset));
@@ -206,29 +237,37 @@
       const hint2 = rootEl.querySelector('#resFilterHint');
       if (hint2 && degraded) hint2.innerHTML = '⚠ 当前版本暂无适配结果，已显示全部版本的热门内容';
       if (hint2 && !state.query && !window.Store.get('cfReady')) {
-        hint2.innerHTML = '提示：CurseForge 未启用（发布版自带；开发版可在设置填写 Key）—— CurseForge 资源以英文索引，中文资源请用英文名搜索';
+        const cfCtx = cfDomain();
+        hint2.innerHTML = cfCtx
+          ? '提示：当前域尚未配置 CurseForge API Key，请联系域管理员'
+          : '提示：CurseForge 未启用（发布版自带；开发版可在设置填写 Key）—— CurseForge 资源以英文索引，中文资源请用英文名搜索';
       } else if (hint2 && state.query && /[\u4e00-\u9fa5]/.test(state.query)) {
         hint2.innerHTML = '提示：Modrinth / CurseForge 都以英文索引资源，中文一般搜不到 —— 请使用英文名（中文译名可在 MC百科 查询）';
       }
     } catch (e) {
       if (mySeq !== searchSeq) return;
-      const msg = e.message.replace(/^Error: /, '');
+      const msg = e.message
+        .replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '')
+        .replace(/^Error:\s*/, '');
       if (/API Key/i.test(msg)) {
+        const cfCtx = cfDomain();
         window.Dom.clear(grid).append(
           h('div.empty', { style: { gridColumn: '1/-1', gap: '10px' } },
             h('div.empty-icon', null, '🔑'),
-            h('div', null, 'CurseForge 需要 API Key 才能搜索'),
-            h('div.row', { style: { justifyContent: 'center', marginTop: '4px' } },
-              h('button.btn.btn-primary.btn-sm.pressable', {
-                onclick: () => {
-                  window.app.goto('settings');
-                  if (window.Pages.settings && window.Pages.settings.focusCfKey) window.Pages.settings.focusCfKey();
-                },
-              }, '前往设置填写'),
-              h('button.btn.btn-ghost.btn-sm.pressable', {
-                onclick: () => window.smcl.openUrl('https://console.curseforge.com/').catch(() => {}),
-              }, '申请 API Key ↗'),
-            ),
+            h('div', null, cfCtx ? '当前域 CurseForge 不可用' : 'CurseForge 需要 API Key 才能搜索'),
+            cfCtx
+              ? h('div.faint', null, msg)
+              : h('div.row', { style: { justifyContent: 'center', marginTop: '4px' } },
+                h('button.btn.btn-primary.btn-sm.pressable', {
+                  onclick: () => {
+                    window.app.goto('settings');
+                    if (window.Pages.settings && window.Pages.settings.focusCfKey) window.Pages.settings.focusCfKey();
+                  },
+                }, '前往设置填写'),
+                h('button.btn.btn-ghost.btn-sm.pressable', {
+                  onclick: () => window.smcl.openUrl('https://console.curseforge.com/').catch(() => {}),
+                }, '申请 API Key ↗'),
+              ),
           ),
         );
       } else {
