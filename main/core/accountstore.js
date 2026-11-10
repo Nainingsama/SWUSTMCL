@@ -52,6 +52,11 @@ function remove(uid) {
 
 function setActive(uid) {
   const s = read();
+  if (!uid) {
+    s.activeId = '';
+    write(s);
+    return null;
+  }
   if (!s.list.some((a) => a.uid === uid)) return null;
   s.activeId = uid;
   write(s);

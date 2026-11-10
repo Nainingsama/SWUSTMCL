@@ -210,6 +210,28 @@
 
   /** CurseForge API Key：申请入口 + 保存/清除 + 状态 */
   function cfKeyRow(s) {
+    const activeDomain = window.DomainContext && window.DomainContext.active ? window.DomainContext.active() : null;
+    const relay = activeDomain && !activeDomain.personal
+      ? ((activeDomain.manifest || {}).curseforge || null)
+      : null;
+    if (relay && relay.relayUrl) {
+      const configured = Boolean(relay.configured);
+      return h('div#cfKeyField', null,
+        h('div.set-row', null,
+          h('div.set-row-main', null,
+            h('div.set-row-label', null, 'CurseForge API Key'),
+            h('div.set-row-desc', null,
+              configured
+                ? '当前域由「' + activeDomain.name + '」皮肤站中转 CurseForge 请求，Key 由站点提供，无需在本机填写，也不会下发到本机。'
+                : '当前域由「' + activeDomain.name + '」皮肤站中转 CurseForge，但站点尚未配置 Key，请联系域管理员。'),
+          ),
+          h('div.set-row-ctl', { style: { maxWidth: '100%' } },
+            h('span.badge.' + (configured ? 'badge-green' : 'badge-orange'), null,
+              configured ? '由皮肤站提供' : '域未配置'),
+          ),
+        ),
+      );
+    }
     const input = h('input.input.mono', {
       type: 'password',
       value: s.cfApiKey || '',

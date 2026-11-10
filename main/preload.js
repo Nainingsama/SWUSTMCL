@@ -122,6 +122,8 @@ contextBridge.exposeInMainWorld('smcl', {
 
   // 启动器域
   domainsList: () => ipcRenderer.invoke('domains:list'),
+  domainsState: () => ipcRenderer.invoke('domains:state'),
+  domainsSetActive: (id) => ipcRenderer.invoke('domains:setActive', { id }),
   domainsAdd: (input) => ipcRenderer.invoke('domains:add', { input }),
   domainsRemove: (id) => ipcRenderer.invoke('domains:remove', { id }),
   domainsRefresh: (id) => ipcRenderer.invoke('domains:refresh', { id }),

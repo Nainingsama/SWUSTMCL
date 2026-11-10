@@ -269,6 +269,10 @@ body.theme-light .sidebar { background-color: rgba(244, 246, 252, 0.9); } /* 亮
   border-radius: 5px;
   padding: 1px 6px;
   width: fit-content;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   margin-top: 3px;
 }
 

@@ -110,6 +110,41 @@ const core = {
 };
 
 const log = core.log;
+
+/** 当前站点型域的 authlib 根地址；个人域返回空串。 */
+function normalizeDomainRoot(value) {
+  return String(value || '').replace(/\/+$/, '');
+}
+function activeSiteDomain() {
+  try {
+    const domain = core.domains.active();
+    return domain && !domain.personal ? domain : null;
+  } catch {
+    return null;
+  }
+}
+function activeDomainRoot() {
+  const domain = activeSiteDomain();
+  if (!domain) return '';
+  const manifest = domain.manifest || {};
+  return normalizeDomainRoot((manifest.auth && manifest.auth.yggdrasilUrl) || manifest.yggdrasilUrl || '');
+}
+/** 域内账号必须且只能来自该域对应的皮肤站。 */
+function assertAccountAllowedInDomain(entry) {
+  const domain = activeSiteDomain();
+  if (!domain) return;
+  const root = activeDomainRoot();
+  if (!root || !entry || entry.type !== 'authlib' || normalizeDomainRoot(entry.payload && entry.payload.root) !== root) {
+    throw new Error('当前处于「' + (domain.name || '站点域') + '」，只能使用该域对应皮肤站的账号');
+  }
+}
+/** 离开个人域前记住当前账户，回来时恢复。 */
+function rememberPersonalAccount() {
+  const current = core.domains.active();
+  if (!current || !current.personal) return;
+  const currentId = core.accountstore.activeId();
+  if (currentId) settingsLib.save({ personalAccountId: currentId });
+}
 const wall = core.wallpaper;
 wall.registerScheme(); // 必须在 app ready 前
 
@@ -150,6 +185,7 @@ async function handleProtocolUrl(raw) {
     if (url.hostname !== 'add-domain' && url.hostname !== 'domain') return;
     const target = url.searchParams.get('url');
     if (!target) throw new Error('邀请缺少域地址');
+    rememberPersonalAccount();
     const item = await core.domains.add(target);
     send('domains:added', item);
     if (win) {
@@ -867,6 +903,14 @@ ipcMain.handle('game:launch', async (_e, payload) => {
   const joinServer = payload && payload.server && payload.server.host ? { host: String(payload.server.host), port: Number(payload.server.port) || 25565 } : null;
   // 允许多开：不同实例、甚至同一实例都可以再启动一个窗口
   const s = settingsLib.all();
+  const launchDomain = activeSiteDomain();
+  const launchDomainRoot = activeDomainRoot();
+  if (launchDomain) {
+    const al = settingsLib.getSecret('authlib');
+    if (!launchDomainRoot || !al || !al.selected || normalizeDomainRoot(al.root) !== launchDomainRoot) {
+      throw new Error('当前处于「' + (launchDomain.name || '站点域') + '」，请先在账户页登录该域对应的皮肤站账号再启动游戏');
+    }
+  }
   const meta = core.versions.loadVersionJson(dir, id);
 
   // 启动前体检：库/资源缺失会自动补全（否则 Fabric 等加载器会 ClassNotFoundException）
@@ -1193,6 +1237,7 @@ ipcMain.handle('accounts:list', async () => {
 });
 
 ipcMain.handle('accounts:addOffline', async (_e, payload) => {
+  assertAccountAllowedInDomain(null);
   const name = String((payload && payload.name) || '').trim();
   if (!name || name.length > 32 || /[\\/:*?"<>|]/.test(name)) throw new Error('玩家名无效');
   const uid = 'offline-' + name.toLowerCase();
@@ -1208,6 +1253,7 @@ ipcMain.handle('accounts:switch', async (_e, payload) => {
   const store = core.accountstore.read();
   const entry = store.list.find((a) => a.uid === uid);
   if (!entry) throw new Error('账户不存在');
+  assertAccountAllowedInDomain(entry);
   if (entry.type === 'offline') {
     settingsLib.save({ loginMode: 'offline', playerName: entry.name });
   } else if (entry.type === 'msa') {
@@ -1236,23 +1282,39 @@ ipcMain.handle('accounts:remove', async (_e, payload) => {
   const uid = String((payload && payload.uid) || '');
   const store = core.accountstore.read();
   const entry = store.list.find((a) => a.uid === uid);
+  const wasActive = store.activeId === uid;
+  const inDomain = Boolean(activeSiteDomain());
+  const domainRoot = activeDomainRoot();
   const nextActive = core.accountstore.remove(uid);
-  // 若删除的是激活账户：回落到列表下一个或离线
-  if (store.activeId === uid) {
-    const next = store.list.find((a) => a.uid === nextActive);
-    if (next && next.type === 'msa') {
+  // 若删除的是激活账户：域内优先回落到同一皮肤站账户，个人域回落到列表下一个
+  if (wasActive) {
+    const remaining = core.accountstore.list();
+    const next = inDomain
+      ? remaining.find((a) => a.type === 'authlib' && domainRoot && normalizeDomainRoot(a.payload && a.payload.root) === domainRoot)
+      : remaining.find((a) => a.uid === nextActive);
+    if (!next) {
+      core.accountstore.setActive('');
+      settingsLib.save({ loginMode: inDomain ? 'authlib' : 'offline' });
+      if (inDomain) {
+        settingsLib.setSecret('authlib', null);
+        settingsLib.setSecret('msa', null);
+      }
+    } else if (next.type === 'msa') {
+      core.accountstore.setActive(next.uid);
       settingsLib.setSecret('msa', next.payload);
       settingsLib.save({ loginMode: 'msa', playerName: next.name });
-    } else if (next && next.type === 'authlib') {
+    } else if (next.type === 'authlib') {
+      core.accountstore.setActive(next.uid);
       settingsLib.setSecret('authlib', next.payload);
       settingsLib.save({ loginMode: 'authlib' });
     } else {
-      settingsLib.save({ loginMode: 'offline' });
+      core.accountstore.setActive(next.uid);
+      settingsLib.save({ loginMode: 'offline', playerName: next.name });
     }
   }
   if (entry && entry.type === 'msa') { /* 令牌随 safeStorage 覆盖自然失效 */ }
   log.info('已移除账户：' + (entry ? entry.name : uid));
-  return { activeId: nextActive || '' };
+  return { activeId: core.accountstore.activeId() || '' };
 });
 
 ipcMain.handle('avatar:get', async (_e, payload) => {
@@ -1318,7 +1380,11 @@ ipcMain.handle('dialog:pickJava', async () => {
   return p;
 });
 
-ipcMain.handle('clipboard:write', (_e, text) => { clipboard.writeText(String(text || '')); return true; });
+ipcMain.handle('clipboard:write', (_e, payload) => {
+  const text = typeof payload === 'string' ? payload : String((payload && payload.text) || '');
+  clipboard.writeText(text);
+  return true;
+});
 
 ipcMain.handle('clipboard:read', () => { const t = clipboard.readText() || ''; return t; });
 
@@ -1361,7 +1427,51 @@ ipcMain.handle('servers:remove', (_e, id) => core.servers.remove(String(id || ''
 
 // ---------- 启动器域 ----------
 ipcMain.handle('domains:list', () => core.domains.list());
-ipcMain.handle('domains:add', (_e, payload) => core.domains.add(String((payload && payload.input) || '')));
+ipcMain.handle('domains:state', () => core.domains.state());
+ipcMain.handle('domains:setActive', async (_e, payload) => {
+  const target = String((payload && payload.id) || 'personal');
+  const before = core.domains.active();
+  if (before.id === 'personal') {
+    const currentId = core.accountstore.activeId();
+    if (currentId) settingsLib.save({ personalAccountId: currentId });
+  }
+  const state = core.domains.setActive(target);
+  const domain = core.domains.active();
+  const normalizeRoot = (value) => String(value || '').replace(/\/+$/, '');
+  let accountEntry = null;
+  if (domain.personal) {
+    const savedId = settingsLib.all().personalAccountId || '';
+    accountEntry = core.accountstore.list().find((a) => a.uid === savedId) || null;
+  } else {
+    const root = normalizeRoot(domain.manifest && domain.manifest.auth && domain.manifest.auth.yggdrasilUrl);
+    accountEntry = core.accountstore.list().find(
+      (a) => a.type === 'authlib' && normalizeRoot(a.payload && a.payload.root) === root
+    ) || null;
+  }
+  if (accountEntry) {
+    if (accountEntry.type === 'offline') {
+      settingsLib.save({ loginMode: 'offline', playerName: accountEntry.name });
+    } else if (accountEntry.type === 'msa') {
+      settingsLib.setSecret('msa', accountEntry.payload);
+      settingsLib.save({ loginMode: 'msa', playerName: accountEntry.name });
+    } else if (accountEntry.type === 'authlib') {
+      settingsLib.setSecret('authlib', accountEntry.payload);
+      settingsLib.save({ loginMode: 'authlib' });
+    }
+    core.accountstore.setActive(accountEntry.uid);
+  } else {
+    core.accountstore.setActive('');
+    settingsLib.setSecret('authlib', null);
+    settingsLib.setSecret('msa', null);
+    settingsLib.save({ loginMode: domain.personal ? 'offline' : 'authlib' });
+  }
+  log.info('已切换域：' + (domain.name || domain.id));
+  return { state, account: core.account.accountState(), cfReady: core.content.hasCfKey() };
+});
+ipcMain.handle('domains:add', (_e, payload) => {
+  rememberPersonalAccount();
+  return core.domains.add(String((payload && payload.input) || ''));
+});
 ipcMain.handle('domains:remove', (_e, payload) => core.domains.remove(String((payload && payload.id) || '')));
 ipcMain.handle('domains:refresh', (_e, payload) => core.domains.refresh(String((payload && payload.id) || '')));
 ipcMain.handle('domains:downloadResource', async (_e, payload) => {
@@ -1520,6 +1630,11 @@ ipcMain.handle('authlib:meta', async (_e, payload) => {
 
 ipcMain.handle('authlib:login', async (_e, payload) => {
   const r = await core.authlib.login(String(payload.url), String(payload.username), String(payload.password));
+  const domain = activeSiteDomain();
+  const domainRoot = activeDomainRoot();
+  if (domain && (!domainRoot || normalizeDomainRoot(r.root) !== domainRoot)) {
+    throw new Error('当前处于「' + (domain.name || '站点域') + '」，只能登录该域对应的皮肤站' + (domainRoot ? '：' + domainRoot : ''));
+  }
   let selected = r.selected;
   let accessToken = r.accessToken;
   if (!selected && r.profiles.length) {
@@ -1544,6 +1659,7 @@ ipcMain.handle('accounts:selectProfile', async (_e, payload) => {
   const profileId = String((payload && payload.profileId) || '');
   const entry = core.accountstore.read().list.find((a) => a.uid === uid);
   if (!entry || entry.type !== 'authlib') throw new Error('该账户不是皮肤站账户');
+  assertAccountAllowedInDomain(entry);
   const pl = entry.payload || {};
   if (!pl.root || !pl.accessToken) throw new Error('缺少皮肤站令牌，请重新登录');
   const r = await core.authlib.selectProfile(pl.root, pl.accessToken, profileId);
@@ -1563,6 +1679,7 @@ ipcMain.handle('accounts:selectProfile', async (_e, payload) => {
 ipcMain.handle('authlib:selectProfile', async (_e, payload) => {
   const al = settingsLib.getSecret('authlib');
   if (!al) throw new Error('尚未登录皮肤站');
+  assertAccountAllowedInDomain({ type: 'authlib', payload: al });
   const r = await core.authlib.selectProfile(al.root, al.accessToken, String(payload.profileId));
   al.accessToken = r.accessToken;
   al.selected = r.selected;

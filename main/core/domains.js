@@ -20,9 +20,11 @@ function storePath() {
 function readStore() {
   try {
     const value = JSON.parse(fs.readFileSync(storePath(), 'utf8'));
-    if (value && value.version === STORE_VERSION && Array.isArray(value.items)) return value;
+    if (value && value.version === STORE_VERSION && Array.isArray(value.items)) {
+      return { version: STORE_VERSION, activeId: value.activeId || 'personal', items: value.items };
+    }
   } catch {}
-  return { version: STORE_VERSION, items: [] };
+  return { version: STORE_VERSION, activeId: 'personal', items: [] };
 }
 
 function writeStore(store) {
@@ -127,6 +129,10 @@ function normalizeManifest(raw, base) {
       loginUrl: String(auth.loginUrl || ''),
       playersUrl: String(auth.playersUrl || ''),
     },
+    curseforge: {
+      relayUrl: resolveUrl((raw.curseforge && raw.curseforge.relayUrl) || '', base),
+      configured: Boolean(raw.curseforge && raw.curseforge.configured),
+    },
     servers,
     resources,
     updatedAt: raw.updatedAt || null,
@@ -139,12 +145,57 @@ async function fetchManifest(base) {
   return normalizeManifest(raw, base);
 }
 
+function personalDomain() {
+  return {
+    id: 'personal',
+    personal: true,
+    url: '',
+    name: '个人域',
+    icon: '',
+    manifest: {
+      version: 1,
+      name: '个人域',
+      description: '本机个人环境，使用启动器本地账户与服务器。',
+      icon: '',
+      siteUrl: '',
+      announcement: { text: '', updatedAt: null },
+      servers: [],
+      resources: [],
+      auth: null,
+      curseforge: null,
+    },
+    fetchedAt: null,
+    error: '',
+  };
+}
+
+function state() {
+  const store = readStore();
+  const items = [personalDomain(), ...store.items];
+  const activeId = items.some((item) => item.id === store.activeId) ? store.activeId : 'personal';
+  return { version: STORE_VERSION, activeId, items };
+}
+
 function list() {
   return readStore().items;
 }
 
 function find(id) {
+  if (id === 'personal') return personalDomain();
   return readStore().items.find((item) => item.id === id) || null;
+}
+
+function active() {
+  const current = state();
+  return current.items.find((item) => item.id === current.activeId) || personalDomain();
+}
+
+function setActive(id) {
+  const store = readStore();
+  if (id !== 'personal' && !store.items.some((item) => item.id === id)) throw new Error('域不存在');
+  store.activeId = id;
+  writeStore(store);
+  return state();
 }
 
 async function add(input) {
@@ -163,6 +214,7 @@ async function add(input) {
     error: '',
   };
   store.items.push(item);
+  store.activeId = item.id;
   writeStore(store);
   return item;
 }
@@ -187,10 +239,12 @@ async function refresh(id) {
 }
 
 function remove(id) {
+  if (id === 'personal') throw new Error('个人域不能移除');
   const store = readStore();
   const before = store.items.length;
   store.items = store.items.filter((item) => item.id !== id);
   if (store.items.length === before) throw new Error('域不存在');
+  if (store.activeId === id) store.activeId = 'personal';
   writeStore(store);
   return true;
 }
@@ -241,4 +295,4 @@ async function installResource(domainId, resourceId, instanceDir, onProgress) {
   return { ...file, path: target, installed: true };
 }
 
-module.exports = { list, add, refresh, remove, downloadResource, installResource, normalizeBase, manifestUrl };
+module.exports = { list, state, active, find, add, refresh, remove, setActive, downloadResource, installResource, normalizeBase, manifestUrl };

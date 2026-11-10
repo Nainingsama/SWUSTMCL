@@ -36,6 +36,17 @@
     return cur.id + (cur.loader && cur.loader !== '原版' ? ' · ' + cur.loader : '');
   }
 
+  /** 当前域下的可用账户判断：站点型域只认对应皮肤站账户。 */
+  function domainAccount() {
+    const domain = window.DomainContext && window.DomainContext.active ? window.DomainContext.active() : null;
+    const managed = Boolean(domain && !domain.personal);
+    const root = managed && window.DomainContext.authRoot ? window.DomainContext.authRoot() : '';
+    const account = window.Store.state.account || null;
+    const normalize = (v) => String(v || '').replace(/\/+$/, '');
+    const allowed = !managed || Boolean(account && account.mode === 'authlib' && normalize(account.root) === root);
+    return { domain, managed, root, account, allowed };
+  }
+
   /** 实例选择浮层：搜索列表 + 启动游戏大按钮（形态参考 SJMC） */
   function openInstancePicker(anchor, select) {
     const list = window.Store.state.installed || [];
@@ -90,8 +101,17 @@
   async function openAccountPicker(anchor) {
     let store;
     try { store = await window.smcl.accountsList(); } catch { return; }
-    const list = (store && store.list) || [];
-    if (!list.length) { window.Toast.warn('还没有账户，去账户页添加'); return; }
+    const domain = window.DomainContext && window.DomainContext.active ? window.DomainContext.active() : null;
+    const managed = Boolean(domain && !domain.personal);
+    const domainRoot = (window.DomainContext && window.DomainContext.authRoot) ? window.DomainContext.authRoot() : '';
+    const normalizeRoot = (v) => String(v || '').replace(/\/+$/, '');
+    const list = ((store && store.list) || []).filter(
+      (a) => !managed || (a.type === 'authlib' && normalizeRoot(a.payload && a.payload.root) === domainRoot)
+    );
+    if (!list.length) {
+      window.Toast.warn(managed ? '当前域还没有登录账号，请先在账户页登录域账号' : '还没有账户，去账户页添加');
+      return;
+    }
     const names = (window.Store.get('settings') || {}).authlibNames || {};
     const labelOf = (a) => {
       if (a.type === 'msa') return '微软正版';
@@ -403,11 +423,16 @@
   // ------------------------------------------------------------ 服务器列表
   function serverCard() {
     const body = h('div.card-body');
+    const domain = window.DomainContext && window.DomainContext.active ? window.DomainContext.active() : null;
+    const managed = Boolean(domain && !domain.personal);
     const card = h('div.card.server-card', null,
       h('div.card-head', null,
-        h('div.card-title', null, icon('server', 16), '服务器'),
+        h('div.card-title', { style: { minWidth: 0, display: 'flex', alignItems: 'center', gap: '6px' } },
+          icon('server', 16),
+          h('span.ellipsis', { title: managed ? (domain.name + ' · 服务器') : '服务器', style: { minWidth: 0 } }, managed ? (domain.name + ' · 服务器') : '服务器'),
+        ),
         h('span.spacer'),
-        h('button.btn.btn-ghost.btn-xs', { onclick: openAddServer }, '＋ 添加'),
+        managed ? null : h('button.btn.btn-ghost.btn-xs', { onclick: openAddServer }, '＋ 添加'),
       ),
       body,
     );
@@ -425,11 +450,20 @@
 
   async function drawServers(body) {
     if (!body) return;
+    const domain = window.DomainContext && window.DomainContext.active ? window.DomainContext.active() : null;
+    const managed = Boolean(domain && !domain.personal);
     let list = [];
-    try { list = await window.smcl.serversList(); } catch {}
+    if (managed) {
+      list = ((domain.manifest && domain.manifest.servers) || []).map((srv) => ({
+        id: srv.id, name: srv.name, host: srv.host, port: srv.port,
+        note: srv.note || '', instanceId: '', builtin: false, domain: true,
+      }));
+    } else {
+      try { list = await window.smcl.serversList(); } catch {}
+    }
     window.Dom.clear(body);
     if (!list.length) {
-      body.append(h('div.empty', null, h('div.empty-icon', null, icon('server', 34)), '还没有服务器 —— 点右上「＋ 添加」'));
+      body.append(h('div.empty', null, h('div.empty-icon', null, icon('server', 34)), managed ? '该域还没有配置服务器' : '还没有服务器 —— 点右上「＋ 添加」'));
       return;
     }
     const installed = window.Store.get('installed') || [];
@@ -446,16 +480,18 @@
           ),
           metaEl,
           h('div.faint.srv-bind', null,
-            srv.instanceId
-              ? (installed.some((v) => v.id === srv.instanceId) ? '已安装「' + srv.instanceId + '」' : '绑定实例「' + srv.instanceId + '」（未安装）')
-              : '未绑定整合包'),
+            srv.domain
+              ? '来自域 · 由管理员维护'
+              : srv.instanceId
+                ? (installed.some((v) => v.id === srv.instanceId) ? '已安装「' + srv.instanceId + '」' : '绑定实例「' + srv.instanceId + '」（未安装）')
+                : '未绑定整合包'),
         ),
         h('div.row', { style: { gap: '6px', flex: 'none' } },
           h('button.btn.btn-ghost.btn-xs', { title: '复制服务器地址', onclick: async () => {
             try { await window.smcl.clipboardWrite(srv.host + ':' + srv.port); window.Toast.success('已复制 ' + srv.host + ':' + srv.port); } catch (e) { window.Toast.error(e.message); }
           } }, '⧉'),
           h('button.btn.btn-primary.btn-xs.pressable', { title: '启动并加入服务器', onclick: () => joinServer(srv) }, '启动'),
-          h('button.btn.btn-ghost.btn-xs', { title: '移除这个服务器', style: { color: '#ff6369' }, onclick: () => editServer(srv) }, icon('trash', 14)),
+          srv.domain ? null : h('button.btn.btn-ghost.btn-xs', { title: '移除这个服务器', style: { color: '#ff6369' }, onclick: () => editServer(srv) }, icon('trash', 14)),
         ),
       );
       body.append(row);
@@ -473,6 +509,12 @@
   }
 
   async function joinServer(srv) {
+    const dom = domainAccount();
+    if (dom.managed && !dom.allowed) {
+      window.Toast.warn('请先登录「' + dom.domain.name + '」域账号');
+      window.app.goto('account');
+      return;
+    }
     const installed = window.Store.get('installed') || [];
     let inst = installed.find((v) => v.id === srv.instanceId);
     if (!inst) {
@@ -500,18 +542,18 @@
       const m = window.Modal.open({
         title: '加入 ' + srv.name,
         body: (el) => el.append(
-          h('div.muted', { style: { marginBottom: '10px' } }, '选择用于加入 ' + srv.host + ':' + srv.port + ' 的实例（同时保存为该服务器的默认实例）：'),
+          h('div.muted', { style: { marginBottom: '10px' } }, srv.domain ? '选择用于加入 ' + srv.host + ':' + srv.port + ' 的实例：' : '选择用于加入 ' + srv.host + ':' + srv.port + ' 的实例（同时保存为该服务器的默认实例）：'),
           sel,
         ),
         footer: [
           h('button.btn', { onclick: () => m.close(null) }, '取消'),
           h('button.btn.btn-primary', { onclick: async () => {
             const inst = installed.find((v) => v.id === sel.value);
-            if (inst) {
+            if (inst && !srv.domain) {
               try { await window.smcl.serversSave(Object.assign({}, srv, { instanceId: inst.id })); } catch {}
             }
             m.close(inst || null);
-          } }, '启动并记住'),
+          } }, srv.domain ? '启动' : '启动并记住'),
         ],
       });
       m.then((r) => resolve(r || null));
@@ -676,18 +718,26 @@
     }, instanceLabel(versionSelect));
 
     const avatar = h('canvas.avatar-canvas', { width: 8, height: 8 });
-    const playerName = window.Store.state.account ? window.Store.state.account.name : (s.settings ? s.settings.playerName : 'Steve');
+    const domainAcc = domainAccount();
+    const playerName = domainAcc.managed && !domainAcc.allowed
+      ? '未登录域账号'
+      : (domainAcc.account ? domainAcc.account.name : (s.settings ? s.settings.playerName : 'Steve'));
+    const modeText = domainAcc.managed
+      ? domainAcc.domain.name
+      : (s.account ? (s.account.mode === 'msa' ? '微软正版' : s.account.mode === 'authlib' ? ((((window.Store.get('settings') || {}).authlibNames) || {})[s.account.root] || s.account.serverName || '皮肤站') : '离线账户') : '离线账户');
     const playerChip = h('div.player-chip', null,
       h('span.avatar-wrap', null, avatar),
-      h('div', null,
+      h('div', { style: { minWidth: 0 } },
         h('div.pc-name', { style: { fontSize: '14px', fontWeight: '650' } }, playerName),
-        h('div.faint.pc-mode', null, s.account ? (s.account.mode === 'msa' ? '微软正版' : s.account.mode === 'authlib' ? ((((window.Store.get('settings') || {}).authlibNames) || {})[s.account.root] || s.account.serverName || '皮肤站') : '离线账户') : '离线账户'),
+        h('div.faint.pc-mode', { title: modeText }, modeText),
       ),
       h('button.btn.btn-ghost.btn-xs', { style: { marginLeft: 'auto' }, onclick: () => window.app.goto('account') }, '管理'),
     );
     playerChip.style.cursor = 'pointer';
     playerChip.addEventListener('click', (e) => {
       if (e.target.closest('button')) return;
+      const cur = domainAccount();
+      if (cur.managed && !cur.allowed) { window.app.goto('account'); return; }
       openAccountPicker(playerChip);
     });
 
@@ -724,14 +774,24 @@
     // 账号变化 → 同步玩家卡片（登录/登出后）
     const syncPlayerChip = async () => {
       // 实时查当前 DOM：订阅只注册一次，但页面重渲染后元素会换新，不能捕获旧节点
-      const acc = window.Store.state.account || {};
+      const dom = domainAccount();
+      const acc = dom.account || {};
       const chip = document.querySelector('.view[data-view="home"] .player-chip') || playerChip;
       const nameEl = chip.querySelector('.pc-name');
       const modeEl = chip.querySelector('.pc-mode');
       const av = chip.querySelector('canvas');
       if (!nameEl) return;
-      nameEl.textContent = acc.name || 'Steve';
-      modeEl.textContent = acc.mode === 'msa' ? '微软正版' : acc.mode === 'authlib' ? ((((window.Store.get('settings') || {}).authlibNames) || {})[acc.root] || acc.serverName || '皮肤站') : '离线账户';
+      const blocked = dom.managed && !dom.allowed;
+      nameEl.textContent = blocked ? '未登录域账号' : (acc.name || 'Steve');
+      const mode = dom.managed
+        ? dom.domain.name
+        : (acc.mode === 'msa' ? '微软正版' : acc.mode === 'authlib' ? ((((window.Store.get('settings') || {}).authlibNames) || {})[acc.root] || acc.serverName || '皮肤站') : '离线账户');
+      modeEl.textContent = mode;
+      modeEl.title = mode;
+      if (blocked) {
+        if (av) await window.SkinView.drawHead(av, '');
+        return;
+      }
       try {
         const r = await window.smcl.getAvatar(acc.uuid || '', acc.name || 'Steve');
         if (av) await window.SkinView.drawHead(av, r && r.dataUrl);
@@ -831,13 +891,24 @@
     );
 
     // ---------- 公告 ----------
-    const announceCard = h('div.card.announce-card', null,
-      h('div.card-head', null, h('div.card-title', null, '公告')),
-      h('div.card-body', null,
-        h('div.banner.banner-info', null, '✦', h('div.grow', null, '星启 SWUSTMCL v1.0 发布 —— 欢迎通过「下载游戏」安装首个版本。')),
-        h('div.muted', null, '支持 PCL / HMCL 目录自动发现、版本隔离、正版与离线登录、整合包一键导入。'),
-      ),
-    );
+    const activeDomain = window.DomainContext && window.DomainContext.active ? window.DomainContext.active() : null;
+    const domainManaged = Boolean(activeDomain && !activeDomain.personal);
+    const domainAnnouncement = domainManaged ? (((activeDomain.manifest || {}).announcement || {}).text || '') : '';
+    const announceCard = domainManaged
+      ? h('div.card.announce-card', null,
+          h('div.card-head', null, h('div.card-title.ellipsis', { title: activeDomain.name + ' · 公告', style: { minWidth: 0 } }, activeDomain.name + ' · 公告')),
+          h('div.card-body', null,
+            h('div.banner.banner-info', null, '✦', h('div.grow', null, domainAnnouncement || '域管理员还没有发布公告。')),
+            h('div.muted', null, '当前处于站点型域，服务器、资源与账号由该域管理。'),
+          ),
+        )
+      : h('div.card.announce-card', null,
+          h('div.card-head', null, h('div.card-title', null, '公告')),
+          h('div.card-body', null,
+            h('div.banner.banner-info', null, '✦', h('div.grow', null, '星启 SWUSTMCL v1.0 发布 —— 欢迎通过「下载游戏」安装首个版本。')),
+            h('div.muted', null, '支持 PCL / HMCL 目录自动发现、版本隔离、正版与离线登录、整合包一键导入。'),
+          ),
+        );
 
     // ---- 组件化首页：卡片可拖拽 / 缩放 / 刷新，互不重叠，页面可滚动 ----
     const srvCard = serverCard();
@@ -848,7 +919,7 @@
       { id: 'running', title: '运行状态', card: runningCard, hidden: !s.gameRunning },
       { id: 'servers', title: '服务器', card: srvCard, refresh: () => srvCard.__refresh && srvCard.__refresh() },
       { id: 'calendar', title: '日历', card: calCard, refresh: () => calCard.__refresh && calCard.__refresh() },
-      { id: 'announce', title: '公告', card: announceCard, refresh: () => renderBanners(banners) },
+      { id: 'announce', title: '公告', card: announceCard, refresh: domainManaged ? () => {} : () => renderBanners(banners) },
       { id: 'clock', title: '时钟', card: clockCard(), refresh: () => {} },
     ];
     const canvas = h('div.home-canvas.mt-12');
@@ -1005,6 +1076,12 @@
       window.Toast.warn('还没有可启动的实例，先去「下载游戏」装一个吧');
       return;
     }
+    const dom = domainAccount();
+    if (dom.managed && !dom.allowed) {
+      window.Toast.warn('请先登录「' + dom.domain.name + '」域账号');
+      window.app.goto('account');
+      return;
+    }
     const inst = (window.Store.state.installed || []).find((v) => v.id === id);
     setLaunching(btn, true, '启动中…');
     try {
@@ -1036,7 +1113,12 @@
   }
 
   async function drawAvatar(canvas) {
-    const acc = window.Store.state.account;
+    const dom = domainAccount();
+    if (dom.managed && !dom.allowed) {
+      await window.SkinView.drawHead(canvas, '');
+      return;
+    }
+    const acc = dom.account || window.Store.state.account;
     try {
       const r = await window.smcl.getAvatar(acc ? acc.uuid : '', acc ? acc.name : 'Steve');
       await window.SkinView.drawHead(canvas, r && r.dataUrl);

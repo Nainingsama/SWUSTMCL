@@ -42,12 +42,14 @@
   }
 
   /** SJMC 式「添加角色」弹窗：角色类型分段 + 内容区 + 底部取消/确定 */
-  function openAddModal(defaultTab) {
+  function openAddModal(defaultTab, fixedRoot) {
+    if (fixedRoot) defaultTab = 'authlib';
     let tab = defaultTab || 'offline';
     let submit = () => {};
     let api = null;
     let closeSubs = []; // 弹窗关闭时清理的事件订阅
-    const okBtn = h('button.btn.btn-primary.pressable', { onclick: () => submit() }, '确定');
+    const okText = fixedRoot ? '登录' : '确定';
+    const okBtn = h('button.btn.btn-primary.pressable', { onclick: () => submit() }, okText);
 
     const errEl = h('div', { style: { display: 'none', marginTop: '10px' } });
     const showErr = (msg) => {
@@ -62,7 +64,7 @@
       errEl.style.display = 'block';
     };
     const clearErr = () => { errEl.style.display = 'none'; };
-    const busy = (on, text) => { okBtn.disabled = on; okBtn.textContent = text ? text : '确定'; };
+    const busy = (on, text) => { okBtn.disabled = on; okBtn.textContent = text ? text : okText; };
 
     // ---- 离线模式 ----
     function bodyOffline() {
@@ -134,10 +136,11 @@
     }
 
     // ---- 第三方认证（皮肤站） ----
-    function bodyAuthlib() {
+    function bodyAuthlib(fixedRoot) {
       const metaBox = h('div', { style: { marginTop: '10px' } });
       const formBox = h('div');
-      const url = h('input.input.mono#alUrl', { placeholder: 'https://…/api/yggdrasil' });
+      const url = h('input.input.mono#alUrl', { placeholder: 'https://…/api/yggdrasil', value: fixedRoot || '' });
+      if (fixedRoot) url.readOnly = true;
       const user = h('input.input', { placeholder: '皮肤站账号（邮箱/用户名）', style: { marginTop: '8px' } });
       const pass = h('input.input', { type: 'password', placeholder: '密码', style: { marginTop: '8px' } });
       const dispName = h('input.input', { placeholder: '显示名（可选，默认用站点名称，如 LittleSkin）', style: { marginTop: '8px' } });
@@ -197,6 +200,13 @@
           identify(url.value);
         } catch (e) { window.Toast.error(e.message); }
       } }, '📋 剪贴板');
+      if (fixedRoot) {
+        setTimeout(() => identify(fixedRoot), 30);
+        return h('div', null,
+          h('div.muted', { style: { marginBottom: '8px' } }, '当前域只允许使用对应皮肤站账号登录，其他登录方式在该域内不可用。'),
+          metaBox, formBox,
+        );
+      }
       return h('div', null,
         h('div.field', null, h('div.row', null, h('span.field-label.grow', null, 'API 地址（Yggdrasil Root）'), clipBtn), url),
         metaBox, formBox,
@@ -204,34 +214,36 @@
       );
     }
 
-    const TABS = [
-      ['offline', '离线模式', bodyOffline],
-      ['msa', '微软账户', bodyMsa],
-      ['authlib', '第三方认证', bodyAuthlib],
-    ];
+    const TABS = fixedRoot
+      ? [['authlib', '域账号', () => bodyAuthlib(fixedRoot)]]
+      : [
+        ['offline', '离线模式', bodyOffline],
+        ['msa', '微软账户', bodyMsa],
+        ['authlib', '第三方认证', () => bodyAuthlib()],
+      ];
     const seg = h('div.seg', { style: { marginBottom: '14px' } });
-    for (const [t, label] of TABS) {
-      seg.append(h(`button.seg-item${t === tab ? '.active' : ''}`, {
-        dataset: { tab: t },
-        onclick: (e) => {
-          tab = t;
-          clearErr();
-          okBtn.disabled = false; okBtn.textContent = '确定';
-          seg.querySelectorAll('.seg-item').forEach((x) => x.classList.toggle('active', x === e.currentTarget));
-          window.Dom.clear(content).append(TABS.find((x) => x[0] === t)[2]());
-        },
-      }, label));
+    if (TABS.length > 1) {
+      for (const [t, label] of TABS) {
+        seg.append(h(`button.seg-item${t === tab ? '.active' : ''}`, {
+          dataset: { tab: t },
+          onclick: (e) => {
+            tab = t;
+            clearErr();
+            okBtn.disabled = false; okBtn.textContent = okText;
+            seg.querySelectorAll('.seg-item').forEach((x) => x.classList.toggle('active', x === e.currentTarget));
+            window.Dom.clear(content).append(TABS.find((x) => x[0] === t)[2]());
+          },
+        }, label));
+      }
     }
     const content = h('div');
     const bodyFn = (bodyEl) => {
-      bodyEl.append(
-        h('div.field-label', { style: { marginBottom: '8px' } }, '角色类型'),
-        seg, content, errEl,
-      );
+      if (TABS.length > 1) bodyEl.append(h('div.field-label', { style: { marginBottom: '8px' } }, '角色类型'));
+      bodyEl.append(seg, content, errEl);
       window.Dom.clear(content).append(TABS.find((x) => x[0] === tab)[2]());
     };
     api = window.Modal.open({
-      title: '添加角色',
+      title: fixedRoot ? '登录域账号' : '添加角色',
       dismissible: false, // 授权过程中误点空白处会中断等待，必须显式点取消
       body: bodyFn,
       footer: [
@@ -325,7 +337,20 @@
     const store = await loadStore();
     if (seq !== renderSeq) return; // 已有更新的渲染，放弃本次
 
-    const list = store.list || [];
+    const domain = window.DomainContext && window.DomainContext.active ? window.DomainContext.active() : null;
+    const managed = Boolean(domain && !domain.personal);
+    const domainRoot = managed
+      ? String(((domain.manifest || {}).auth || {}).yggdrasilUrl || '').replace(/\/+$/, '')
+      : '';
+    const list = (store.list || []).filter(
+      (a) => !managed || (a.type === 'authlib' && rootOf(a).replace(/\/+$/, '') === domainRoot)
+    );
+    // 域内只有「域账号」一个来源，避免沿用个人域留下的过滤器
+    if (managed) filter = 'all';
+    const domainLogin = () => {
+      if (!domainRoot) { window.Toast.warn('该域未配置认证地址，请联系域管理员'); return; }
+      openAddModal('authlib', domainRoot);
+    };
     const activeId = store.activeId || '';
 
     // ---- 左：来源过滤（每个皮肤站单独一行）----
@@ -341,27 +366,35 @@
       n ? h('span.badge', null, String(n)) : null,
       extra || null,
     );
-    const sources = h('div.ver-side', { style: { width: '230px', flex: 'none', height: 'calc(100vh - 112px)' } },
-      sideRow('all', '全部来源', counts.all, icon('person', 16)),
-      sideRow('offline', '离线模式', counts.offline || 0, icon('bolt', 16)),
-      sideRow('msa', '微软账户', counts.msa || 0, icon('apps', 16)),
-      ...authRoots.map((root) => {
-        const sample = list.find((a) => a.type === 'authlib' && rootOf(a) === root);
-        return sideRow('authlib:' + root, authNameOf(root, sample && sample.payload && sample.payload.serverName),
-          list.filter((a) => a.type === 'authlib' && rootOf(a) === root).length,
-          icon('server', 16),
-          h('button.iconbtn', { title: '编辑显示名 / 查看地址', onclick: (e) => { e.stopPropagation(); editAuthServer(root); } }, '…'));
-      }),
-      h('span.spacer'),
-      h('button.ver-side-btn', { onclick: () => openAddModal('authlib') }, icon('plus', 14), '添加认证服务器'),
-    );
+    const sources = managed
+      ? h('div.ver-side', { style: { width: '230px', flex: 'none', height: 'calc(100vh - 112px)' } },
+          sideRow('all', domain.name + ' · 域账号', counts.all, icon('server', 16)),
+          h('span.spacer'),
+          h('button.ver-side-btn', { onclick: domainLogin }, icon('plus', 14), '登录域账号'),
+        )
+      : h('div.ver-side', { style: { width: '230px', flex: 'none', height: 'calc(100vh - 112px)' } },
+          sideRow('all', '全部来源', counts.all, icon('person', 16)),
+          sideRow('offline', '离线模式', counts.offline || 0, icon('bolt', 16)),
+          sideRow('msa', '微软账户', counts.msa || 0, icon('apps', 16)),
+          ...authRoots.map((root) => {
+            const sample = list.find((a) => a.type === 'authlib' && rootOf(a) === root);
+            return sideRow('authlib:' + root, authNameOf(root, sample && sample.payload && sample.payload.serverName),
+              list.filter((a) => a.type === 'authlib' && rootOf(a) === root).length,
+              icon('server', 16),
+              h('button.iconbtn', { title: '编辑显示名 / 查看地址', onclick: (e) => { e.stopPropagation(); editAuthServer(root); } }, '…'));
+          }),
+          h('span.spacer'),
+          h('button.ver-side-btn', { onclick: () => openAddModal('authlib') }, icon('plus', 14), '添加认证服务器'),
+        );
 
     // ---- 右：标题 + 添加按钮 ----
     const head = h('div.row', null,
       h('div', { style: { fontWeight: '700', fontSize: '15px' } },
-        filter.startsWith('authlib:') ? authNameOf(filter.slice(8)) : (filter === 'all' ? '全部来源' : TYPE_LABEL[filter] || '全部来源')),
+        managed ? (domain.name + ' · 域账号') : (filter.startsWith('authlib:') ? authNameOf(filter.slice(8)) : (filter === 'all' ? '全部来源' : TYPE_LABEL[filter] || '全部来源'))),
       h('span.spacer'),
-      h('button.btn.btn-primary.btn-sm.pressable', { onclick: () => openAddModal('offline') }, '＋ 添加角色'),
+      managed
+        ? h('button.btn.btn-primary.btn-sm.pressable', { onclick: domainLogin }, '登录域账号')
+        : h('button.btn.btn-primary.btn-sm.pressable', { onclick: () => openAddModal('offline') }, '＋ 添加角色'),
     );
 
     // ---- 网格 ----
@@ -372,7 +405,7 @@
     });
     const grid = h('div.grid', { style: { gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: '14px' } });
     if (!shown.length) {
-      grid.append(h('div.empty', { style: { gridColumn: '1/-1' } }, h('div.empty-icon', null, icon('person', 34)), '该来源还没有账户 —— 点右上「＋ 添加角色」'));
+      grid.append(h('div.empty', { style: { gridColumn: '1/-1' } }, h('div.empty-icon', null, icon('person', 34)), managed ? '该域还没有登录账号 —— 点右上「登录域账号」' : '该来源还没有账户 —— 点右上「＋ 添加角色」'));
     }
     for (const a of shown) {
       grid.append(accountCard(a, a.uid === activeId));
@@ -432,7 +465,13 @@
   window.Pages = window.Pages || {};
   /** 拖入皮肤站地址时调用：打开添加角色弹窗（第三方认证）并预填识别 */
   function openAuthlibUrl(url) {
-    openAddModal('authlib');
+    const domain = window.DomainContext && window.DomainContext.active ? window.DomainContext.active() : null;
+    const fixedRoot = domain && !domain.personal ? window.DomainContext.authRoot() : '';
+    openAddModal('authlib', fixedRoot || undefined);
+    if (fixedRoot) {
+      if (url && String(url).replace(/\/+$/, '') !== fixedRoot) window.Toast.info('当前域只允许登录对应皮肤站');
+      return;
+    }
     setTimeout(() => {
       const inp = document.querySelector('#alUrl');
       if (inp) {
