@@ -43,7 +43,7 @@
 > 
 > 也可把前缀换成 https://ghproxy.net/ ；启动器内置更新在直连卡住 12 秒后会自动切换镜像。
 
-**直接使用**：下载 [Releases](https://github.com/Nainingsama/SWUSTMCL/releases) 里的 `SWUSTMCL-1.1.0-win-x64.zip`，解压到任意目录，双击 `SWUSTMCL.exe` —— 免安装，数据存在程序旁的 `userdata/`，删目录即卸载。
+**直接使用**：下载 [Releases](https://github.com/Nainingsama/SWUSTMCL/releases) 里的 `SWUSTMCL-1.1.1-win-x64.zip`，解压到任意目录，双击 `SWUSTMCL.exe` —— 免安装，数据存在程序旁的 `userdata/`，删目录即卸载。
 
 **从源码运行**（需要 Node.js 18+）：
 

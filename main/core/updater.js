@@ -36,14 +36,53 @@ function compareVersion(a, b) {
   return 0;
 }
 
+/**
+ * 镜像版本清单：仓库根目录的 version.json（jsDelivr / gh-proxy 均可访问）
+ * 结构：{ version, notes, assets: [{ name, size, sha256, url }] }
+ */
+const VERSION_JSON_SOURCES = [
+  'https://cdn.jsdelivr.net/gh/Nainingsama/SWUSTMCL@main/version.json',
+  'https://gh-proxy.com/https://raw.githubusercontent.com/Nainingsama/SWUSTMCL/main/version.json',
+  'https://ghproxy.net/https://raw.githubusercontent.com/Nainingsama/SWUSTMCL/main/version.json',
+];
+
+async function latestFromMirror() {
+  for (const url of VERSION_JSON_SOURCES) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT), headers: { 'User-Agent': 'SWUSTMCL-Updater' } });
+      if (!res.ok) continue;
+      const j = await res.json();
+      if (!j || !j.version) continue;
+      const assets = (j.assets || []).map((a) => ({
+        name: a.name,
+        size: Number(a.size) || 0,
+        browser_download_url: a.url,
+        digest: a.sha256 ? 'sha256:' + a.sha256 : '',
+      }));
+      log.info('更新检查走镜像清单：' + url);
+      return { tag_name: 'v' + String(j.version).replace(/^v/, ''), body: j.notes || '', assets };
+    } catch (e) {
+      log.warn('镜像清单不可用：' + url + ' → ' + (e && e.message));
+    }
+  }
+  return null;
+}
+
 async function latestRelease() {
-  const res = await fetch(`${API}/releases/latest`, {
-    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'SWUSTMCL-Updater' },
-    signal: AbortSignal.timeout(TIMEOUT),
-  });
-  if (res.status === 404) return null; // 还没有任何 Release
-  if (!res.ok) throw new Error(`GitHub ${res.status}`);
-  return res.json();
+  try {
+    const res = await fetch(`${API}/releases/latest`, {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'SWUSTMCL-Updater' },
+      signal: AbortSignal.timeout(TIMEOUT),
+    });
+    if (res.status === 404) return null; // 还没有任何 Release
+    if (!res.ok) throw new Error(`GitHub ${res.status}`);
+    return res.json();
+  } catch (e) {
+    log.warn('GitHub API 不可用（' + (e && e.message) + '），尝试镜像清单');
+    const mirror = await latestFromMirror();
+    if (mirror) return mirror;
+    throw new Error('无法连接更新服务器（GitHub 网络受限），可前往 Releases 手动下载');
+  }
 }
 
 /** 从资产里解析期望的体积与 SHA-256。GitHub 2025+ 资产自带 digest 字段 */
