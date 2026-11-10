@@ -46,8 +46,23 @@
 
   async function draw() {
     if (!rootEl) return;
+    const domain = window.DomainContext && window.DomainContext.active ? window.DomainContext.active() : null;
+    const managed = Boolean(domain && !domain.personal);
     let list = [];
-    try { list = await window.smcl.serversList(); } catch {}
+    if (managed) {
+      list = ((domain.manifest && domain.manifest.servers) || []).map((srv) => ({
+        id: srv.id,
+        name: srv.name,
+        host: srv.host,
+        port: srv.port,
+        note: srv.note || '',
+        instanceId: '',
+        builtin: false,
+        domain: true,
+      }));
+    } else {
+      try { list = await window.smcl.serversList(); } catch {}
+    }
     window.Dom.clear(rootEl);
 
     const viewSeg = h('div.seg', null,
@@ -56,20 +71,20 @@
     );
 
     rootEl.append(
-      h('div.section-title', null, '服务器',
-        h('span.hint', null, list.length + ' 个服务器 · 实时在线状态'),
+      h('div.section-title', null, managed ? (domain.name + ' · 服务器') : '服务器',
+        h('span.hint', null, managed ? '由域管理员维护 · 实时在线状态' : (list.length + ' 个服务器 · 实时在线状态')),
         h('span.spacer'),
         h('button.iconbtn', { title: '重新探测', onclick: () => { lastPing = {}; draw(); } }, ic('refresh', 16)),
         viewSeg,
-        h('button.btn.btn-sm.pressable', { onclick: () => editServerFlow(null) }, ic('plus', 14), '添加服务器'),
+        managed ? null : h('button.btn.btn-sm.pressable', { onclick: () => editServerFlow(null) }, ic('plus', 14), '添加服务器'),
       ),
     );
 
     if (!list.length) {
       rootEl.append(h('div.empty', null,
         h('div.empty-icon', null, ic('server', 34)),
-        h('div', null, '还没有服务器'),
-        h('button.btn.btn-primary.btn-sm.pressable', { style: { marginTop: '10px' }, onclick: () => editServerFlow(null) }, '添加服务器'),
+        h('div', null, managed ? '该域还没有配置服务器' : '还没有服务器'),
+        managed ? null : h('button.btn.btn-primary.btn-sm.pressable', { style: { marginTop: '10px' }, onclick: () => editServerFlow(null) }, '添加服务器'),
       ));
       return;
     }
@@ -149,10 +164,10 @@
             h('span.srv-name.ellipsis', { title: srv.name }, srv.name),
             srv.builtin ? h('span.badge.badge-blue', null, '校服') : null,
           ),
-          h('div.faint', null, srv.instanceId ? (boundOk ? '绑定实例：' + srv.instanceId : '绑定实例未安装：' + srv.instanceId) : '未绑定整合包'),
+          h('div.faint', null, srv.domain ? '来自域 · 由管理员维护' : srv.instanceId ? (boundOk ? '绑定实例：' + srv.instanceId : '绑定实例未安装：' + srv.instanceId) : '未绑定整合包'),
         ),
         dot,
-        h('button.iconbtn', { title: '编辑 / 删除', onclick: () => editServerFlow(srv) }, ic('dots', 16)),
+        srv.domain ? null : h('button.iconbtn', { title: '编辑 / 删除', onclick: () => editServerFlow(srv) }, ic('dots', 16)),
       ),
       meta,
       pb,
@@ -181,7 +196,7 @@
         onclick: async () => { try { await window.smcl.clipboardWrite(srv.host + ':' + srv.port); window.Toast.success('已复制地址'); } catch (e) { window.Toast.error(e.message); } },
       }, ic('copy', 14)),
       h('button.btn.btn-primary.btn-xs.pressable', { onclick: () => joinFlow(srv) }, ic('play', 13), '进服'),
-      h('button.iconbtn', { title: '编辑 / 删除', onclick: () => editServerFlow(srv) }, ic('dots', 16)),
+      srv.domain ? null : h('button.iconbtn', { title: '编辑 / 删除', onclick: () => editServerFlow(srv) }, ic('dots', 16)),
     );
     row.__dot = dot; row.__pb = pb; row.__meta = meta; row.__avatar = rowAvatarEl;
     return row;
@@ -212,6 +227,7 @@
   }
 
   function editServerFlow(srv) {
+    if (srv && srv.domain) { window.Toast.info('域内服务器由域管理员维护'); return; }
     const isNew = !srv;
     const name = h('input.input', { value: srv ? srv.name : '', placeholder: '服务器名称' });
     const addr = h('input.input', { value: srv ? srv.host + ':' + srv.port : '', placeholder: '地址，如 mc.example.com:25565' });
@@ -285,7 +301,9 @@
               const picked = installed.find((v) => v.id === sel.value);
               m.close(null);
               if (!picked) return;
-              try { await window.smcl.serversSave({ ...srv, instanceId: picked.id }); } catch {}
+              if (!srv.domain) {
+                try { await window.smcl.serversSave({ ...srv, instanceId: picked.id }); } catch {}
+              }
               launchJoin(picked, srv);
             },
           }, '启动并记住'),
@@ -297,6 +315,16 @@
   }
 
   async function launchJoin(inst, srv) {
+    const domain = window.DomainContext && window.DomainContext.active ? window.DomainContext.active() : null;
+    if (domain && !domain.personal) {
+      const root = String((window.DomainContext.authRoot && window.DomainContext.authRoot()) || '').replace(/\/+$/, '');
+      const acc = window.Store.state.account;
+      if (!acc || acc.mode !== 'authlib' || String(acc.root || '').replace(/\/+$/, '') !== root) {
+        window.Toast.warn('请先登录「' + domain.name + '」域账号');
+        window.app.goto('account');
+        return;
+      }
+    }
     try {
       window.Toast.info('正在启动 ' + inst.id + ' 并加入 ' + srv.host + ':' + srv.port + '…');
       await window.smcl.launch(inst.id, inst.dir, { server: { host: srv.host, port: srv.port } });

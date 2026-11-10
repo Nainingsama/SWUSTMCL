@@ -14,6 +14,7 @@ const net = require('./net');
 const safe = require('./safe');
 const settingsLib = require('./settings');
 const versionLib = require('./versions');
+const domains = require('./domains');
 const log = require('./log');
 
 const MODRINTH = 'https://api.modrinth.com/v2';
@@ -86,13 +87,89 @@ function builtinCfKey() {
   return builtinCfKeyCache;
 }
 
+/**
+ * 站点型域提供的 CurseForge 中转。域内不向玩家下发站点 Key，
+ * 所有搜索/文件查询都经皮肤站转发。
+ */
+function domainCurseforge() {
+  try {
+    const domain = domains.active();
+    if (!domain || domain.personal) return null;
+    const cf = domain.manifest && domain.manifest.curseforge;
+    if (!cf || !cf.relayUrl) return null;
+    return {
+      relayUrl: String(cf.relayUrl).replace(/\/+$/, ''),
+      configured: Boolean(cf.configured),
+      domain,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function hasCfKey() {
+  const relay = domainCurseforge();
+  if (relay) return relay.configured;
   return Boolean((settingsLib.all().cfApiKey || '').trim() || builtinCfKey());
 }
 
 function cfHeaders() {
+  if (domainCurseforge()) return { Accept: 'application/json' };
   const key = (settingsLib.all().cfApiKey || '').trim() || builtinCfKey();
   return { 'x-api-key': key, Accept: 'application/json' };
+}
+
+function cfUrl(pathname, params) {
+  const relay = domainCurseforge();
+  const query = new URLSearchParams(params || {});
+  if (relay) {
+    query.set('path', pathname);
+    return `${relay.relayUrl}?${query.toString()}`;
+  }
+  const encoded = query.toString();
+  return `${CURSEFORGE}${pathname}${encoded ? '?' + encoded : ''}`;
+}
+
+/** CurseForge 查询统一入口：有域走站点中转并保留站点错误文案。 */
+async function cfFetch(pathname, params) {
+  const relay = domainCurseforge();
+  if (relay && !relay.configured) {
+    throw new Error('当前域尚未配置 CurseForge API Key，请联系域管理员');
+  }
+  if (!relay && !hasCfKey()) {
+    throw new Error('CurseForge 未启用：请在设置里填写 API Key');
+  }
+  const url = cfUrl(pathname, params);
+  if (!relay) {
+    return net.fetchJson(url, { headers: cfHeaders(), timeout: 15000 });
+  }
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        headers: { Accept: 'application/json', 'User-Agent': 'SWUSTMCL' },
+        signal: AbortSignal.timeout(20000),
+      });
+      const body = await response.text();
+      let payload = null;
+      try { payload = body ? JSON.parse(body) : null; } catch {}
+      if (!response.ok) {
+        const message = payload && payload.error && payload.error.message;
+        const error = new Error(message || `CurseForge 中转返回 HTTP ${response.status}`);
+        error.noRetry = response.status < 500;
+        throw error;
+      }
+      if (payload && payload.ok === true && Object.prototype.hasOwnProperty.call(payload, 'data')) {
+        return payload.data;
+      }
+      return payload;
+    } catch (error) {
+      lastError = error;
+      if (error.noRetry) throw error;
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+    }
+  }
+  throw new Error('CurseForge 中转请求失败：' + ((lastError && lastError.message) || '网络错误'));
 }
 
 /**
@@ -138,9 +215,6 @@ async function search(q) {
   }
 
   // CurseForge
-  if (!(settingsLib.all().cfApiKey || '').trim()) {
-    throw new Error('CurseForge 搜索需要在设置里填写 API Key（可在 console.curseforge.com 免费申请）');
-  }
   const params = new URLSearchParams({
     gameId: '432', // Minecraft
     classId: String(type.cf),
@@ -151,7 +225,7 @@ async function search(q) {
     pageSize: String(limit),
     index: String(offset),
   });
-  const data = await net.fetchJson(`${CURSEFORGE}/mods/search?${params}`, { headers: cfHeaders(), timeout: 15000 });
+  const data = await cfFetch('/mods/search', params);
   return {
     source: 'curseforge',
     total: (data.data && data.data.length) || 0,
@@ -202,8 +276,7 @@ async function versions(source, projectId, q = {}) {
     })));
   }
 
-  if (!(settingsLib.all().cfApiKey || '').trim()) throw new Error('需要在设置里填写 CurseForge API Key');
-  const data = await net.fetchJson(`${CURSEFORGE}/mods/${encodeURIComponent(projectId)}/files`, { headers: cfHeaders(), timeout: 15000 });
+  const data = await cfFetch(`/mods/${encodeURIComponent(projectId)}/files`);
   let list = (data.data || []).map((f) => ({
     id: String(f.id),
     name: f.displayName || f.fileName,
@@ -276,8 +349,7 @@ async function planInstall(payload) {
       items.push({ url: depFile.url, filename: depFile.filename, size: depFile.size, sha1: (depFile.hashes && depFile.hashes.sha1) || '', dir: targetDir, dep: true });
     }
   } else {
-    if (!(settingsLib.all().cfApiKey || '').trim()) throw new Error('需要在设置里填写 CurseForge API Key');
-    const f = await net.fetchJson(`${CURSEFORGE}/mods/${encodeURIComponent(projectId)}/files/${encodeURIComponent(versionId)}`, { headers: cfHeaders(), timeout: 15000 });
+    const f = await cfFetch(`/mods/${encodeURIComponent(projectId)}/files/${encodeURIComponent(versionId)}`);
     const file = f.data || {};
     if (!file.downloadUrl) throw new Error('该文件没有直链（CF 限制），请改用 Modrinth 源');
     items.push({ url: file.downloadUrl, filename: file.fileName, size: file.fileLength || 0, sha1: '', dir: targetDir, dep: false });

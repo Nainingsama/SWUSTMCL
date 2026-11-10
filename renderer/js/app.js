@@ -7,7 +7,7 @@
   const Pages = window.Pages;
 
   const VIEW_TITLES = {
-    home: '首页', domains: '域', versions: '版本管理', download: '下载游戏',
+    home: '首页', versions: '版本管理', download: '下载游戏',
     account: '账户', downloads: '记录', servers: '服务器',
     packs: '整合包', content: '资源', saves: '存档', settings: '设置',
   };
@@ -58,6 +58,20 @@
       }
     },
 
+    /** 域切换后重新渲染当前页（保留当前视图，不触发页面切换动画） */
+    reloadView() {
+      const next = document.querySelector(`.view[data-view="${this.current}"]`);
+      const page = Pages[this.current];
+      if (!next || !page || !page.render) return;
+      window.Dom.clear(next);
+      try {
+        page.render(next);
+        if (page.onShow) page.onShow();
+      } catch (e) {
+        console.error('[domain] 页面重绘失败:', e);
+      }
+    },
+
     async refreshInstalled() {
       // 防重入：download.onShow 会再调 refreshInstalled，无条件递归会把主循环饿死
       if (window.__refreshingInstalled) return;
@@ -80,9 +94,35 @@
 
     updateAccountCard() {
       const acc = window.Store.get('account');
-      if (!acc) return;
+      const domain = window.DomainContext && window.DomainContext.active ? window.DomainContext.active() : null;
+      const domainRoot = (window.DomainContext && window.DomainContext.authRoot) ? window.DomainContext.authRoot() : '';
+      const normalizeRoot = (value) => String(value || '').replace(/\/+$/, '');
+      const clearSidebarAvatar = () => {
+        const av = document.getElementById('sidebarAvatar');
+        if (!av) return;
+        const ctx = av.getContext('2d');
+        if (ctx) ctx.clearRect(0, 0, av.width, av.height);
+      };
+      if (domain && !domain.personal) {
+        if (!acc || acc.mode !== 'authlib' || normalizeRoot(acc.root) !== domainRoot) {
+          document.getElementById('accountName').textContent = '未登录域账号';
+          document.getElementById('accountMode').textContent = domain.name;
+          document.getElementById('accountMode').title = domain.name;
+          clearSidebarAvatar();
+          return;
+        }
+      }
+      if (!acc) {
+        document.getElementById('accountName').textContent = '未登录';
+        document.getElementById('accountMode').textContent = domain && !domain.personal ? domain.name : '点击登录';
+        document.getElementById('accountMode').title = '';
+        clearSidebarAvatar();
+        return;
+      }
       document.getElementById('accountName').textContent = acc.name;
-      document.getElementById('accountMode').textContent = acc.mode === 'msa' ? '正版' : acc.mode === 'authlib' ? ((window.Store.get('settings') || {}).authlibNames || {})[acc.root] || acc.serverName || '皮肤站' : '离线';
+      const modeLabel = acc.mode === 'msa' ? '正版' : acc.mode === 'authlib' ? ((window.Store.get('settings') || {}).authlibNames || {})[acc.root] || acc.serverName || '皮肤站' : '离线';
+      document.getElementById('accountMode').textContent = domain && !domain.personal ? domain.name : modeLabel;
+      document.getElementById('accountMode').title = domain && !domain.personal ? domain.name : '';
       window.smcl.getAvatar(acc.uuid, acc.name).then((r) => {
         if (r && r.dataUrl) {
           window.SkinView.drawHead(document.getElementById('sidebarAvatar'), r.dataUrl).catch(() => {});
@@ -163,6 +203,13 @@
         window.Store.set({ wallpaperTheme: t });
         window.Theme.applyAll(state.settings, t);
       } catch {}
+    }
+
+    // 域上下文（个人域 / 站点型域）：先同步账号，再渲染首页
+    try {
+      if (window.DomainContext) await window.DomainContext.init();
+    } catch (e) {
+      console.error('[domain] 初始化失败:', e);
     }
 
     // 渲染首页
