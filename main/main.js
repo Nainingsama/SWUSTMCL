@@ -161,6 +161,7 @@ function createWindow() {
     show: false,
     frame: false,
     backgroundColor: '#0b0e14',
+    icon: (() => { const ico = path.join(path.dirname(process.execPath), 'icon.ico'); return fs.existsSync(ico) ? ico : path.join(__dirname, '..', 'renderer', 'assets', 'logo.png'); })(),
     title: '星启 SWUSTMCL',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -200,6 +201,13 @@ function createWindow() {
     }
     if (action === 'close') return;
     e.preventDefault();
+    // 再次点关闭（30 秒内）视为确认退出，避免弹窗异常时窗口关不掉
+    if (Date.now() - (mwState.promptAt || 0) < 30000) {
+      mwState.allowClose = true;
+      win.close();
+      return;
+    }
+    mwState.promptAt = Date.now();
     try { send('app:close-prompt'); } catch {}
   });
 
@@ -299,8 +307,31 @@ function migrateBuiltinWallpaperDupes() {
   } catch {}
 }
 
-app.whenReady().then(() => {
+app.setAppUserModelId('cn.swust.swustmcl');
+
+app.whenReady().then(async () => {
   wall.registerHandler();
+  // 便携目录：旧版本默认把游戏装到 %APPDATA%\.minecraft，这里一次性改到启动器同目录
+  try {
+    const APPDATA = process.env.APPDATA || path.join(require('os').homedir(), 'AppData', 'Roaming');
+    const legacy = path.join(APPDATA, '.minecraft');
+    const portable = path.join(path.dirname(app.getPath('exe')), '.minecraft');
+    const migrateFlag = path.join(app.getPath('userData'), 'portable-dir.flag');
+    const cur = settingsLib.all().mcDir || '';
+    const isLegacy = cur && path.resolve(cur).toLowerCase() === path.resolve(legacy).toLowerCase();
+    if (app.isPackaged && isLegacy && !fs.existsSync(migrateFlag) && path.resolve(portable) !== path.resolve(legacy)) {
+      settingsLib.save({ mcDir: portable });
+      log.info('游戏目录迁移：' + legacy + ' → ' + portable);
+    }
+    if (app.isPackaged) fs.writeFileSync(migrateFlag, new Date().toISOString(), 'utf8');
+    const finalDir = settingsLib.all().mcDir;
+    if (finalDir) {
+      fs.mkdirSync(path.join(finalDir, 'versions'), { recursive: true });
+      fs.mkdirSync(finalDir, { recursive: true });
+    }
+  } catch (e) {
+    log.warn('游戏目录初始化失败：' + e.message);
+  }
   migrateBuiltinWallpaperDupes();
   // 壁纸模式迁移：补默认值；旧 image 视作夜间壁纸
   try {
@@ -322,9 +353,42 @@ app.whenReady().then(() => {
       log.info('壁纸设置迁移：补全壁纸模式与昼夜槽位');
     }
   } catch {}
+  // 首次运行：在桌面创建快捷方式（便携版/安装版都适用）
+  try {
+    if (app.isPackaged) {
+      const exe = process.execPath;
+      const lnk = path.join(app.getPath('desktop'), '星启 SWUSTMCL.lnk');
+      const ico = path.join(path.dirname(exe), 'icon.ico');
+      try {
+        shell.writeShortcutLink(lnk, 'create', {
+          target: exe,
+          cwd: path.dirname(exe),
+          description: '星启 SWUSTMCL · Minecraft 启动器',
+          icon: fs.existsSync(ico) ? ico : exe,
+          iconIndex: 0,
+        });
+        log.info('已创建桌面快捷方式');
+      } catch (e) { log.warn('创建桌面快捷方式失败：' + e.message); }
+    }
+  } catch {}
+
   createWindow();
   startManifestWatch();
   startUpdateWatch();
+
+  // 显卡偏好：开启过后每次启动重新写入（注册表项会被驱动更新/系统清理抹掉）
+  if (settingsLib.all().gpuHighPerf) {
+    setTimeout(async () => {
+      try {
+        const javas = await core.java.detect({ mcDirs: gameDirs().map((d) => d.path) });
+        if (!javas.length) return log.info('显卡偏好：未检测到 Java 运行时，暂不写入');
+        const r = await core.gpu.applyAll(javas.map((j) => j.path), 'high');
+        log.info('显卡偏好：写入 ' + r.applied.length + ' 个 javaw，失败 ' + r.failed.length);
+      } catch (e) {
+        log.warn('显卡偏好写入失败：' + e.message);
+      }
+    }, 2500);
+  }
 });
 
 app.on('window-all-closed', () => {
@@ -452,7 +516,11 @@ ipcMain.handle('settings:save', (_e, patch) => {
       }
       case 'memory': {
         const n = Number(value);
-        if (!Number.isFinite(n) || n < 1024 || n > 32768) throw new Error('内存分配无效（1024~32768 MB）');
+        const totalMB = Math.floor(require('os').totalmem() / 1048576);
+        const cap = Math.max(2048, Math.min(65536, Math.floor((totalMB * 0.9) / 512) * 512));
+        if (!Number.isFinite(n) || n < 256 || n > cap) {
+          throw new Error('内存分配无效：请填 256~' + cap + ' MB（本机物理内存约 ' + Math.round(totalMB / 1024) + ' GB）');
+        }
         out.memory = Math.round(n);
         break;
       }
@@ -489,6 +557,17 @@ ipcMain.handle('settings:save', (_e, patch) => {
         if (!['ask', 'minimize', 'close'].includes(value)) throw new Error('关闭行为无效');
         out.closeAction = value;
         break;
+      case 'dirNames': {
+        const src = value && typeof value === 'object' ? value : {};
+        const names = {};
+        for (const [k, v] of Object.entries(src)) {
+          if (typeof k !== 'string' || k.length > 400) continue;
+          if (typeof v !== 'string' || !v.trim()) continue;
+          names[k] = v.trim().slice(0, 40);
+        }
+        out.dirNames = names;
+        break;
+      }
       case 'authlibNames': {
         const src = value && typeof value === 'object' ? value : {};
         const names = {};
@@ -642,20 +721,21 @@ ipcMain.handle('version:command', (_e, payload) => {
 ipcMain.handle('version:delete', async (_e, payload) => {
   const id = core.safe.assertVersionId(String((payload && payload.id) || ''));
   const dir = String((payload && payload.dir) || '');
+  if (!dir) throw new Error('缺少游戏目录');
   const instDir = core.safe.safeJoin(path.join(dir, 'versions'), id);
-  const r = await dialog.showMessageBox(win, {
-    type: 'warning',
-    title: '删除实例',
-    message: `确定删除实例「${id}」吗？`,
-    detail: `将移入回收站：\n${instDir}`,
-    buttons: ['移入回收站', '取消'],
-    defaultId: 0,
-    cancelId: 1,
-  });
-  if (r.response !== 0) return { ok: false, canceled: true };
-  const moved = await shell.trashItem(instDir);
-  if (!moved) throw new Error('移入回收站失败——文件可能被占用（游戏/杀软/资源管理器预览），请关闭后重试');
-  log.info(`实例已移入回收站：${id}`);
+  if (!fs.existsSync(instDir)) {
+    // 已被删除（例如上一次其实成功但回报失败）：直接返回，让列表刷新掉它
+    return { ok: true, alreadyGone: true };
+  }
+  try {
+    // Electron 的 shell.trashItem 成功时 resolve(undefined)，失败才抛异常
+    await shell.trashItem(instDir);
+  } catch (e) {
+    const msg = String((e && e.message) || e);
+    if (/ENOENT|找不到|does not exist/i.test(msg)) return { ok: true, alreadyGone: true };
+    throw new Error('移入回收站失败：文件可能被游戏、杀毒软件或资源管理器占用，关闭后重试');
+  }
+  log.info('实例已移入回收站：' + id);
   return { ok: true };
 });
 
@@ -1239,7 +1319,7 @@ ipcMain.handle('log:instance', (_e, payload) => core.instancelog.tail(String((pa
 ipcMain.handle('log:instance:clear', (_e, payload) => core.instancelog.clear(String((payload && payload.id) || '')));
 
 // ---------- 关闭确认（渲染层主题化弹窗）
-const mwState = { allowClose: false };
+const mwState = { allowClose: false, promptAt: 0 };
 ipcMain.handle('app:close-choice', (_e, payload) => {
   const action = String((payload && payload.action) || '');
   const remember = Boolean(payload && payload.remember);
@@ -1431,7 +1511,20 @@ ipcMain.on('authlib:logout', () => {
 
 ipcMain.handle('memory:usage', () => core.memory.usage());
 
+ipcMain.handle('memory:auto', () => core.memory.autoMemoryFromUsage());
+
 ipcMain.handle('memory:free', async () => core.memory.freeWorkingSets());
+
+ipcMain.handle('gpu:status', async () => {
+  if (!core.gpu.supported()) return { supported: false, total: 0, high: 0 };
+  const javas = await core.java.detect({ mcDirs: gameDirs().map((d) => d.path) });
+  const prefs = await core.gpu.readAll();
+  const rows = javas.map((j) => {
+    const v = prefs.get(core.gpu.toJavaw(j.path).toLowerCase()) || '';
+    return { path: j.path, high: v.includes('GpuPreference=2') };
+  });
+  return { supported: true, total: rows.length, high: rows.filter((r) => r.high).length };
+});
 
 ipcMain.handle('gpu:applyAll', async (_e, payload) => {
   const mode = String((payload && payload.mode) || 'auto');

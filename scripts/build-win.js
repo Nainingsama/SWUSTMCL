@@ -84,6 +84,19 @@ async function main() {
 
   // 3. 主程序改名（Electron 会从 resources/app 加载应用源码）
   fs.renameSync(path.join(stage, 'electron.exe'), path.join(stage, 'SWUSTMCL.exe'));
+  // 图标文件（快捷方式 / 窗口图标用）
+  if (fs.existsSync(path.join(root, 'build', 'icon.ico'))) copy(path.join(root, 'build', 'icon.ico'), path.join(stage, 'icon.ico'));
+
+  // 3.5 若 electron-builder 已产出带品牌图标的 exe，优先用它（任务栏/桌面快捷方式图标才正确）
+  const branded = path.join(root, 'release', 'win-unpacked', 'SWUSTMCL.exe');
+  if (fs.existsSync(branded)) {
+    try {
+      fs.copyFileSync(branded, path.join(stage, 'SWUSTMCL.exe'));
+      log('使用品牌图标 exe（release/win-unpacked）');
+    } catch (e) {
+      log('品牌 exe 复制失败，沿用原始 electron.exe：' + e.message);
+    }
+  }
 
   // 4. 应用源码 + 生产依赖
   log('写入应用源码…');

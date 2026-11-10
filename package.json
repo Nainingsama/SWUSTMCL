@@ -23,10 +23,57 @@
     "adm-zip": "^0.5.16"
   },
   "devDependencies": {
-    "electron": "^33.0.0"
+    "electron": "^33.0.0",
+    "electron-builder": "^26.18.0"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Nainingsama/SWUSTMCL.git"
+  },
+  "build": {
+    "appId": "cn.swust.swustmcl",
+    "productName": "SWUSTMCL",
+    "copyright": "Copyright © 2026 SWUSTMCL Contributors",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main/**/*",
+      "renderer/**/*",
+      "package.json",
+      "LICENSE",
+      "build/icon.png"
+    ],
+    "asar": true,
+    "compression": "normal",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "SWUSTMCL-${version}-Setup-${arch}.${ext}",
+      "requestedExecutionLevel": "asInvoker",
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "星启 SWUSTMCL",
+      "uninstallDisplayName": "星启 SWUSTMCL",
+      "language": "2052",
+      "installerLanguages": [
+        "zh_CN"
+      ],
+      "deleteAppDataOnUninstall": false
+    }
   }
 }

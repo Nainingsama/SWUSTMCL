@@ -41,7 +41,7 @@
     const list = window.Store.state.installed || [];
     if (!list.length) { window.Toast.warn('还没有可启动的实例，先去「下载游戏」装一个吧'); return; }
     let chosen = select.value || (list[0] && list[0].id);
-    const search = h('input.input', { placeholder: '搜索实例…' });
+    const search = h('input.input', { placeholder: '搜索实例…', oninput: () => draw() });
     const rowsBox = h('div.inst-list');
     const panel = h('div.inst-picker');
     function draw() {
@@ -787,6 +787,7 @@
             h('div.row', { style: { gap: '8px' } },
               h('span.field-label', null, '内存分配'),
               autoSwitch,
+              h('span.field-hint#memModeHint', null, autoMem ? '自动平衡 · 物理 35%' : '手动指定'),
             ),
             h('div.row', { style: { gap: '8px' } },
               freeBtn,
@@ -1048,7 +1049,7 @@
 
   function memCap() {
     const phys = Math.floor(physicalMemory() / 1048576); // MB
-    return Math.max(2048, Math.min(32768, Math.floor(phys * 0.75 / 512) * 512));
+    return Math.max(2048, Math.min(65536, Math.floor(phys * 0.9 / 512) * 512));
   }
 
   function latestRequiredJava() {

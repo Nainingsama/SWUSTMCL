@@ -10,3 +10,7 @@ userdata/
 cf-key.json
 .tmp/
 scripts/patch-*.js
+
+# 构建缓存 / 产物
+.cache/
+release/

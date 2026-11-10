@@ -30,14 +30,73 @@
   // ------------------------------------------------------------ 启动
   function launchCard(s) {
     const jvmInput = h('input.input.mono', { value: s.jvmArgs || '', placeholder: '例如：-XX:+UseG1GC -Dfml.ignoreInvalidMinecraftCertificates=true', onchange: (e) => set({ jvmArgs: e.target.value }) });
-    const memAuto = h('span.switch' + (s.autoMemory ? '.on' : ''), {
-      title: '按物理内存自动分配（35%，2048~8192 MB）',
-      onclick: () => { memAuto.classList.toggle('on'); set({ autoMemory: memAuto.classList.contains('on') }); },
+    // 内存：滑杆 + 手输 + 自动平衡开关（单一数值显示，避免重复）
+    const memInput = h('input.input.mem-input', {
+      type: 'number', min: '1024', max: '32768', step: '512',
+      value: String(s.memory || 4096),
+      title: '手动输入内存（MB）',
+      onchange: async (e) => {
+        let v = Math.round(Number(e.target.value) || 0);
+        v = Math.max(1024, Math.min(32768, v));
+        e.target.value = String(v);
+        await switchToManual(v);
+      },
     });
-    const memSlider = h('div.slider-wrap', null,
-      slider(s.memory || 4096, 1024, 32768, 512, (v) => set({ memory: v })),
-      memAuto,
-    );
+    const memHint = h('span.mem-hint', null, s.autoMemory ? '自动平衡' : '手动');
+    const memSwitch = h('span.switch' + (s.autoMemory ? '.on' : ''));
+    const memAuto = h('button.mem-auto-btn', {
+      title: '自动平衡：按物理内存 35%（受当前可用内存约束，2048~8192 MB）分配；关闭后按左侧数值手动分配',
+      onclick: async () => {
+        const next = !memSwitch.classList.contains('on');
+        memSwitch.classList.toggle('on', next);
+        memHint.textContent = next ? '自动平衡' : '手动';
+        if (next) {
+          const v = await Promise.resolve(window.smcl.memoryAuto ? window.smcl.memoryAuto() : Number(memInput.value) || 4096).catch(() => Number(memInput.value) || 4096);
+          setMemValue(v);
+          memInput.disabled = true;
+          memInput.title = '自动平衡中：由启动器计算（关闭开关后可手动输入）';
+          await set({ autoMemory: true, memory: v });
+          window.Toast.success('已开启自动平衡：' + v + ' MB');
+        } else {
+          await switchToManual(Number(memInput.value) || Number(s.memory) || 4096);
+        }
+      },
+    }, memSwitch, memHint);
+
+    const physMB = Math.max(2048, Math.floor(((window.Store.state && window.Store.state.sysMemory) || 8 * 1073741824) / 1048576));
+    const memCapMb = Math.max(2048, Math.min(65536, Math.floor((physMB * 0.9) / 512) * 512));
+    const memSlider = slider(Math.min(s.memory || 4096, memCapMb), 1024, memCapMb, 512, async (v) => {
+      await switchToManual(v);
+    });
+    const memSliderValue = memSlider.querySelector('.slider-value');
+    if (memSliderValue) memSliderValue.remove(); // 数值只在右侧输入框显示
+
+    function setMemValue(v) {
+      const n = Math.max(1024, Math.min(memCapMb, Math.round(Number(v) || 4096)));
+      memInput.value = String(n);
+      const el = memSlider.querySelector('input.slider');
+      if (el) {
+        el.value = String(n);
+        el.style.setProperty('--fill', ((n - 1024) / (memCapMb - 1024)) * 100 + '%');
+      }
+      return n;
+    }
+
+    async function switchToManual(v) {
+      const n = setMemValue(v);
+      memSwitch.classList.remove('on');
+      memHint.textContent = '手动';
+      memInput.disabled = false;
+      memInput.title = '手动输入内存（MB）';
+      await set({ autoMemory: false, memory: n });
+    }
+
+    if (s.autoMemory) {
+      if (window.smcl.memoryAuto) window.smcl.memoryAuto().then((v) => setMemValue(v)).catch(() => {});
+      memInput.disabled = true;
+    }
+
+    const memRow = h('div.slider-wrap.mem-row', { style: { gap: '10px' } }, memSlider, memInput, h('span.mem-unit', null, 'MB'), memAuto);
     const freeMemSwitch = h('button.switch' + (s.autoFreeMemory !== false ? '.on' : ''), {
       onclick: () => { freeMemSwitch.classList.toggle('on'); set({ autoFreeMemory: freeMemSwitch.classList.contains('on') }); },
     });
@@ -80,7 +139,7 @@
       h('div.card-head', null, h('div.card-title', null, '启动')),
       h('div.card-body', null,
         gameDirRow,
-        row('内存', '自动分配 = 物理内存 35%（2048~8192 MB）；也可手动指定', memSlider, true),
+        row('内存分配', '自动平衡 = 物理内存 35%（受当前可用内存约束，2048~8192 MB）；拖滑杆或直接输入数值会切换为手动', memRow, true),
         row('启动前优化内存', '每次启动游戏前整理一次系统内存工作集', h('div.row', null, freeMemSwitch, freeNow), true),
         row('全屏启动', '游戏以全屏模式打开', fsSwitch),
         row('关闭启动器时', '最小化：保留在任务栏；直接退出：关闭启动器（正在运行的游戏窗口不受影响）',
@@ -148,6 +207,46 @@
     );
   }
 
+
+  /** CurseForge API Key：申请入口 + 保存/清除 + 状态 */
+  function cfKeyRow(s) {
+    const input = h('input.input.mono', {
+      type: 'password',
+      value: s.cfApiKey || '',
+      placeholder: '粘贴 CurseForge API Key（$2a$10$...）',
+      style: { minWidth: '260px', flex: '1 1 260px' },
+      autocomplete: 'off',
+      spellcheck: 'false',
+    });
+    const status = h('span.badge.' + ((s.cfApiKey || '').trim() ? 'badge-green' : 'badge-orange'), null,
+      (s.cfApiKey || '').trim() ? '已配置' : '未配置');
+    const save = h('button.btn.btn-sm.btn-primary.pressable', {
+      onclick: async () => {
+        const key = String(input.value || '').trim();
+        try {
+          const st = await set({ cfApiKey: key });
+          status.className = 'badge ' + (key ? 'badge-green' : 'badge-orange');
+          status.textContent = key ? '已配置' : '未配置';
+          if (st && st.cfReady !== undefined) window.Store.set({ cfReady: st.cfReady });
+          window.Toast.success(key ? 'CurseForge API Key 已保存' : '已清除 API Key');
+        } catch (e) { window.Toast.error(String(e.message || e).replace(/^Error: /, '')); }
+      },
+    }, '保存');
+    const apply = h('button.btn.btn-ghost.btn-sm.pressable', {
+      onclick: () => window.smcl.openUrl('https://console.curseforge.com/').catch(() => {}),
+    }, '申请地址 ↗');
+    const box = h('div.row#cfKeyRow', { style: { gap: '8px', flexWrap: 'wrap', alignItems: 'center' } }, input, save, apply, status);
+    return h('div', { id: 'cfKeyField' },
+      h('div.set-row', null,
+        h('div.set-row-main', null,
+          h('div.set-row-label', null, 'CurseForge API Key'),
+          h('div.set-row-desc', null, '不填也能用 Modrinth；填写后资源页可切换到 CurseForge 搜索。Key 保存在本机配置，不会上传。'),
+        ),
+        h('div.set-row-ctl', { style: { maxWidth: '100%' } }, box),
+      ),
+    );
+  }
+
   // ------------------------------------------------------------ 网络
   function networkCard(s) {
     const dohSwitch = h('button.switch' + (s.doh ? '.on' : ''), { onclick: () => { dohSwitch.classList.toggle('on'); set({ doh: dohSwitch.classList.contains('on') }); } });
@@ -170,6 +269,7 @@
       h('div.card-body', null,
         row('下载源', '智能选择 = 官方优先，加载缓慢或失败自动切换镜像源；清单获取始终双源竞速', srcSeg, true),
         row('DoH 加速解析', '域名被污染 / 解析异常时开启（DNS over HTTPS · 阿里公共 DNS）', dohSwitch),
+        cfKeyRow(s),
       ),
     );
   }
@@ -314,14 +414,33 @@
 
     const gpuStatus = h('span.badge.' + (s.gpuFallback ? 'badge-orange' : 'badge-green'), null, s.gpuFallback ? '兼容模式已启用' : '正常');
     const updateBtn = h('button.btn.btn-sm.pressable', { onclick: checkUpdateFlow }, '检查启动器更新');
+    const gpuBadge = h('span.badge.badge-grey', null, '检测中…');
+    const refreshGpu = async () => {
+      try {
+        const st = await window.smcl.gpuStatus();
+        if (!st.supported) { gpuBadge.className = 'badge badge-grey'; gpuBadge.textContent = '仅 Windows'; return; }
+        if (!st.total) { gpuBadge.className = 'badge badge-orange'; gpuBadge.textContent = '未检测到 Java'; return; }
+        const all = st.high >= st.total;
+        gpuBadge.className = 'badge ' + (all ? 'badge-green' : 'badge-grey');
+        gpuBadge.textContent = all
+          ? '已启用 · ' + st.high + '/' + st.total + ' 个 javaw'
+          : '未启用（' + st.high + '/' + st.total + '）';
+      } catch { gpuBadge.textContent = '检测失败'; }
+    };
+    setTimeout(refreshGpu, 60);
     const gpuBtn = h('button.btn.btn-sm.pressable', {
       onclick: async () => {
+        gpuBtn.disabled = true;
         try {
           const r = await window.smcl.applyGpuAll('high');
-          window.Toast.success(`已把 ${r.applied.length} 个 javaw 写入 Windows 高性能显卡偏好${r.failed.length ? `，${r.failed.length} 个失败` : ''}`);
+          if (!r.applied.length) window.Toast.warn('没有可写入的 javaw.exe（先确认已检测到 Java）');
+          else window.Toast.success('已把 ' + r.applied.length + ' 个 javaw 写入 Windows 高性能显卡偏好' + (r.failed.length ? '，' + r.failed.length + ' 个失败' : ''));
+          await refreshGpu();
         } catch (e) { window.Toast.error(e.message); }
+        gpuBtn.disabled = false;
       },
-    }, '显卡偏好：高性能');
+    }, '写入高性能偏好');
+    const gpuCell = h('div.row', { style: { gap: '8px' } }, gpuBtn, gpuBadge);
 
     return h('div.card', null,
       h('div.card-head', null, h('div.card-title', null, '系统')),
@@ -329,11 +448,11 @@
         row('版本隔离', '开启后每个版本使用独立的 mods / saves / config 目录（gameDir 指向实例目录）', isolateSwitch),
         row('GPU 兼容兜底', 'GPU 进程崩溃后自动写入标记，下次启动携带兼容参数（--no-sandbox / --disable-gpu-sandbox）', gpuStatus),
         row('第三方软件兼容', '搜狗输入法的云组件会让启动器闪退；开启后启动时自动临时结束这些组件（不影响打字，可在搜狗设置里根治）', autoFixInjectors),
-        row('显卡偏好', '把 javaw.exe 写入 Windows「按应用设置图形性能」', gpuBtn, true),
+        row('显卡偏好', '把 javaw.exe 写入 Windows「按应用设置图形性能」；开启后每次启动启动器都会重新写入，注册表被驱动更新清掉也能恢复', gpuCell, true),
         row('新版本提醒', '后台每 5 分钟检查 Minecraft 新正式版，弹系统通知', autoCheck),
         row('启动器更新', '检查 GitHub Release 增量更新包（体积 / SHA-256 / zip 结构三重校验）', h('div.row', null, updateBtn, autoUpdate)),
         row('关于', `星启 SWUSTMCL v${(window.smcl && window.smcl.version) || '1.0.0'} · MIT License`,
-          h('button.btn.btn-ghost.btn-sm', { onclick: () => window.smcl.openUrl('https://github.com/swustmcl/SWUSTMCL').catch(() => {}) }, 'GitHub')),
+          h('button.btn.btn-ghost.btn-sm', { onclick: () => window.smcl.openUrl('https://github.com/Nainingsama/SWUSTMCL').catch(() => {}) }, 'GitHub')),
       ),
     );
   }
@@ -399,6 +518,18 @@
   window.Pages = window.Pages || {};
   window.Pages.settings = {
     render,
+    /** 资源页跳转：滚动到 CurseForge Key 并聚焦 */
+    focusCfKey() {
+      setTimeout(() => {
+        const el = document.getElementById('cfKeyField');
+        if (!el) return;
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        const inp = el.querySelector('input');
+        if (inp) { inp.focus(); inp.select(); }
+        el.classList.add('cf-flash');
+        setTimeout(() => el.classList.remove('cf-flash'), 1600);
+      }, 260);
+    },
     onShow() { renderAll(); },
     onSettingsChanged() { if (rootEl && window.Store.get('view') === 'settings') renderAll(); },
   };
