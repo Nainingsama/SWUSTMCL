@@ -12,7 +12,7 @@ const on = (channel, cb) => {
 };
 
 contextBridge.exposeInMainWorld('smcl', {
-  version: '1.1.1',
+  version: '1.2.0',
 
   // 应用 / 窗口
   state: () => ipcRenderer.invoke('app:state'),
