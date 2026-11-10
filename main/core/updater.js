@@ -133,17 +133,67 @@ async function install(asset, onProgress) {
   // ---------- 下载 ----------
   report({ stage: 'download', message: '下载更新包', percent: 3 });
   let received = 0;
-  await net.download(asset.url, zipPath, {
-    retries: 2,
-    timeout: 300000,
-    onBytes: (n) => {
-      received += n;
-      if (asset.size) {
-        const percent = Math.min(90, Math.round((received / asset.size) * 88) + 3);
-        report({ stage: 'download', message: `下载中 ${(received / 1048576).toFixed(1)}/${(asset.size / 1048576).toFixed(1)} MB`, percent });
+  // 国内直连 github.com 的 release 资产经常只有几十 KB/s 甚至 0，卡住 12 秒就换镜像
+  const MIRRORS = [
+    'https://gh-proxy.com/',
+    'https://ghproxy.net/',
+    'https://ghfast.top/',
+  ];
+  const tried = [];
+  const onBytes = (n) => {
+    received += n;
+    if (asset.size) {
+      const percent = Math.min(90, Math.round((received / asset.size) * 88) + 3);
+      report({ stage: 'download', message: `下载中 ${(received / 1048576).toFixed(1)}/${(asset.size / 1048576).toFixed(1)} MB`, percent });
+    }
+  };
+
+  async function fetchWithWatchdog(url, dest, { stallMs = 12000, totalMs = 600000 } = {}) {
+    const ac = new AbortController();
+    let lastTick = Date.now();
+    const killer = setTimeout(() => ac.abort(), totalMs);
+    const watch = setInterval(() => {
+      if (Date.now() - lastTick > stallMs) ac.abort();
+    }, 1500);
+    const file = fs.createWriteStream(dest);
+    try {
+      const res = await fetch(url, { signal: ac.signal, redirect: 'follow' });
+      if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
+      const reader = res.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        lastTick = Date.now();
+        if (!file.write(Buffer.from(value))) await new Promise((r) => file.once('drain', r));
+        onBytes(value.length);
       }
-    },
-  });
+      await new Promise((resolve, reject) => file.end((err) => (err ? reject(err) : resolve())));
+    } catch (e) {
+      try { file.destroy(); } catch {}
+      throw e;
+    } finally {
+      clearInterval(watch);
+      clearTimeout(killer);
+    }
+  }
+
+  let downloaded = false;
+  for (const url of [asset.url, ...MIRRORS.map((m) => m + asset.url)]) {
+    if (downloaded) break;
+    if (tried.length) {
+      received = 0;
+      report({ stage: 'download', message: '直连较慢，切换加速镜像重试…', percent: 3 });
+    }
+    try {
+      await fetchWithWatchdog(url, zipPath);
+      downloaded = true;
+    } catch (e) {
+      tried.push(url);
+      log.warn('更新包下载失败：' + url + ' → ' + (e && e.message));
+      await fsp.unlink(zipPath).catch(() => {});
+    }
+  }
+  if (!downloaded) throw new Error('更新包下载失败（直连与镜像均不可用），可稍后重试或前往 GitHub 手动下载');
 
   // ---------- 校验：体积 → SHA-256 → zip 结构 ----------
   report({ stage: 'verify', message: '校验更新包', percent: 92 });
