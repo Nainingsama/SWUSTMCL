@@ -7,7 +7,7 @@
   const Pages = window.Pages;
 
   const VIEW_TITLES = {
-    home: '首页', versions: '版本管理', download: '下载游戏',
+    home: '首页', domains: '域', versions: '版本管理', download: '下载游戏',
     account: '账户', downloads: '记录', servers: '服务器',
     packs: '整合包', content: '资源', saves: '存档', settings: '设置',
   };

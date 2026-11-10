@@ -103,6 +103,7 @@ const core = {
   instances: require('./core/instances'),
   authlib: require('./core/authlib'),
   servers: require('./core/servers'),
+  domains: require('./core/domains'),
   history: require('./core/history'),
   instancelog: require('./core/instancelog'),
   instanceassets: require('./core/instanceassets'),
@@ -138,16 +139,42 @@ function send(channel, payload) {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
 }
 
-// ------------------------------------------------------------ 单实例锁
-if (!app.requestSingleInstanceLock()) {
-  app.quit();
-} else {
-  app.on('second-instance', () => {
+// ------------------------------------------------------------ 单实例锁 / 域邀请协议
+function protocolUrlFromArgs(argv) {
+  return (argv || []).find((arg) => /^swustmcl:\/\//i.test(String(arg || ''))) || '';
+}
+
+async function handleProtocolUrl(raw) {
+  try {
+    const url = new URL(String(raw));
+    if (url.hostname !== 'add-domain' && url.hostname !== 'domain') return;
+    const target = url.searchParams.get('url');
+    if (!target) throw new Error('邀请缺少域地址');
+    const item = await core.domains.add(target);
+    send('domains:added', item);
     if (win) {
       if (win.isMinimized()) win.restore();
       win.show();
       win.focus();
     }
+    log.info('已添加域：' + item.name);
+  } catch (e) {
+    log.warn('域邀请处理失败：' + (e && e.message));
+    send('domains:error', { message: (e && e.message) || '域邀请处理失败' });
+  }
+}
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', (_event, argv) => {
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    }
+    const invite = protocolUrlFromArgs(argv);
+    if (invite) handleProtocolUrl(invite);
   });
 }
 
@@ -309,6 +336,23 @@ function migrateBuiltinWallpaperDupes() {
 
 app.setAppUserModelId('cn.swust.swustmcl');
 
+// swustmcl:// 域邀请协议：网页拖拽/点击可把域直接加进启动器
+try {
+  if (process.defaultApp) {
+    if (process.argv.length >= 2) {
+      app.setAsDefaultProtocolClient('swustmcl', process.execPath, [path.resolve(process.argv[1])]);
+    }
+  } else if (app.isPackaged) {
+    app.setAsDefaultProtocolClient('swustmcl');
+  }
+} catch (e) {
+  log.warn('域邀请协议注册失败：' + (e && e.message));
+}
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  handleProtocolUrl(url);
+});
+
 app.whenReady().then(async () => {
   wall.registerHandler();
   // 便携目录：旧版本默认把游戏装到 %APPDATA%\.minecraft，这里一次性改到启动器同目录
@@ -373,6 +417,8 @@ app.whenReady().then(async () => {
   } catch {}
 
   createWindow();
+  const initialInvite = protocolUrlFromArgs(process.argv);
+  if (initialInvite) setTimeout(() => handleProtocolUrl(initialInvite), 600);
   startManifestWatch();
   startUpdateWatch();
 
@@ -1312,6 +1358,27 @@ ipcMain.handle('servers:list', () => core.servers.list());
 ipcMain.handle('servers:ping', (_e, payload) => core.servers.ping(String((payload && payload.host) || ''), Number((payload && payload.port) || 25565)));
 ipcMain.handle('servers:save', (_e, payload) => core.servers.saveOne(payload || {}));
 ipcMain.handle('servers:remove', (_e, id) => core.servers.remove(String(id || '')));
+
+// ---------- 启动器域 ----------
+ipcMain.handle('domains:list', () => core.domains.list());
+ipcMain.handle('domains:add', (_e, payload) => core.domains.add(String((payload && payload.input) || '')));
+ipcMain.handle('domains:remove', (_e, payload) => core.domains.remove(String((payload && payload.id) || '')));
+ipcMain.handle('domains:refresh', (_e, payload) => core.domains.refresh(String((payload && payload.id) || '')));
+ipcMain.handle('domains:downloadResource', async (_e, payload) => {
+  const id = String((payload && payload.domainId) || '');
+  const resourceId = String((payload && payload.resourceId) || '');
+  return core.domains.downloadResource(id, resourceId, (received, total) => {
+    send('domains:resourceProgress', { domainId: id, resourceId, received, total });
+  });
+});
+ipcMain.handle('domains:installResource', async (_e, payload) => {
+  const id = String((payload && payload.domainId) || '');
+  const resourceId = String((payload && payload.resourceId) || '');
+  const instanceDir = String((payload && payload.instanceDir) || '');
+  return core.domains.installResource(id, resourceId, instanceDir, (received, total) => {
+    send('domains:resourceProgress', { domainId: id, resourceId, received, total });
+  });
+});
 
 // ---------- 游玩历史 / 每实例日志 ----------
 ipcMain.handle('history:list', () => core.history.read());

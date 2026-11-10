@@ -655,3 +655,40 @@ body.theme-light .ver-side-group-head:hover { background: rgba(20, 30, 50, 0.05)
 .ver-side-group-head .grp-name { max-width: 34%; }
 .ver-side-group-head .grp-path { font-size: 10px; }
 .ver-side-group-head .grp-more { opacity: .45; }
+
+/* ------------------------------------------------------------ 域 */
+.domain-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; margin-bottom: 16px; }
+.domain-grid.two { grid-template-columns: 1.15fr .85fr; margin-bottom: 0; }
+.domain-card { padding: 14px; cursor: pointer; transition: border-color .18s ease, background .18s ease; }
+.domain-card:hover { border-color: var(--accent); }
+.domain-card.active { border-color: var(--accent); background: var(--accent-soft); }
+.domain-card-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.domain-avatar { width: 38px; height: 38px; border-radius: 10px; overflow: hidden; flex: none; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,.08); color: var(--text-dim); }
+.domain-avatar.lg { width: 58px; height: 58px; border-radius: 14px; }
+.domain-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.domain-name { font-size: 14px; font-weight: 650; }
+.domain-card-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: 11px; color: var(--text-faint); }
+.domain-card-actions { display: flex; gap: 6px; margin-top: 10px; }
+.domain-detail { display: flex; flex-direction: column; gap: 16px; margin-top: 16px; }
+.domain-hero { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px; }
+.domain-hero-main { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.domain-hero-name { font-size: 20px; font-weight: 700; line-height: 1.25; }
+.domain-hero-actions { display: flex; flex: none; gap: 8px; }
+.domain-section { display: flex; flex-direction: column; gap: 10px; }
+.section-subtitle { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 650; }
+.section-subtitle .hint { font-size: 11px; font-weight: 400; color: var(--text-faint); }
+.domain-announcement { font-size: 13px; line-height: 1.75; }
+.domain-account-current { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; background: rgba(255,255,255,.05); }
+.domain-account-avatar { width: 32px; height: 32px; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent); flex: none; }
+.domain-profiles { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.domain-resources { display: flex; flex-direction: column; gap: 10px; }
+.domain-resource { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
+.domain-resource-icon { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent); flex: none; }
+.domain-resource-name { font-size: 13px; font-weight: 650; }
+.domain-resource-actions { display: flex; flex: none; gap: 6px; }
+@media (max-width: 900px) {
+  .domain-grid.two { grid-template-columns: 1fr; }
+  .domain-hero { align-items: flex-start; flex-direction: column; }
+  .domain-resource { align-items: flex-start; flex-wrap: wrap; }
+  .domain-resource-actions { width: 100%; }
+}
