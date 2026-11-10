@@ -496,3 +496,8 @@ body.resizing-sidebar iframe, body.resizing-sidebar canvas { pointer-events: non
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }
+
+/* 品牌 logo */
+.logo-mark { width: 34px; height: 34px; border-radius: 10px; overflow: hidden; flex: none; display: grid; place-items: center; }
+.logo-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.sidebar.collapsed .logo-mark { width: 30px; height: 30px; }

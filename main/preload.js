@@ -133,10 +133,12 @@ contextBridge.exposeInMainWorld('smcl', {
 
   // 显卡
   applyGpuAll: (mode) => ipcRenderer.invoke('gpu:applyAll', { mode }),
+  gpuStatus: () => ipcRenderer.invoke('gpu:status'),
 
   // 内存
   freeMemory: () => ipcRenderer.invoke('memory:free'),
   memoryUsage: () => ipcRenderer.invoke('memory:usage'),
+  memoryAuto: () => ipcRenderer.invoke('memory:auto'),
 
   // 实例级管理
   instanceGetSettings: (dir, id) => ipcRenderer.invoke('instance:settings:get', { dir, id }),

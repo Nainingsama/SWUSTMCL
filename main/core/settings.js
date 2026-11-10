@@ -16,9 +16,19 @@ const APPDATA = process.env.APPDATA || path.join(HOME, 'AppData', 'Roaming');
 
 const BRAND_BLUE = '#1668dc'; // 校徽蓝（可被设置覆盖为跟随壁纸取色）
 
+// 便携模式：默认游戏目录放在启动器同目录（与 PCL 一致，首次启动自动创建）
+function portableMcDir() {
+  try {
+    const exeDir = path.dirname(app.getPath('exe'));
+    if (exeDir && !/[\\/]node_modules[\\/]/.test(exeDir)) return path.join(exeDir, '.minecraft');
+  } catch {}
+  return path.join(APPDATA, '.minecraft');
+}
+
 const DEFAULTS = {
-  mcDir: path.join(APPDATA, '.minecraft'),
+  mcDir: portableMcDir(),
   extraDirs: [],
+  dirNames: {}, // 自定义启动器/目录显示名：{ 'D:\\PCL\\.minecraft': 'PCL' }
   javaPath: '',
   memory: 4096,
   autoMemory: false, // 自动分配内存（物理内存 35%，2048~8192）

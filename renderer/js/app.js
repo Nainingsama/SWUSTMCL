@@ -62,6 +62,7 @@
       // 防重入：download.onShow 会再调 refreshInstalled，无条件递归会把主循环饿死
       if (window.__refreshingInstalled) return;
       window.__refreshingInstalled = true;
+      if (window.Pages && window.Pages.versions && window.Pages.versions.invalidateDetailCache) window.Pages.versions.invalidateDetailCache();
       try {
         const list = await window.smcl.installed();
         window.Store.set({ installed: list });
@@ -332,6 +333,7 @@
       const remember = h('input', { type: 'checkbox', style: { width: '15px', height: '15px', accentColor: 'var(--accent)' } });
       const m = window.Modal.open({
         title: '关闭启动器',
+        dismissible: false, // 必须明确选择，避免误触把状态卡死
         body: (el) => el.append(
           h('div', { style: { fontSize: '13.5px', lineHeight: '1.65' } }, '要最小化启动器，还是直接退出？'),
           h('div.faint', { style: { marginTop: '6px' } }, '已启动的游戏窗口不会被关闭。'),
@@ -346,6 +348,8 @@
           h('button.btn.btn-primary', { onclick: () => choose('close') }, '直接退出'),
         ],
       });
+      // 无论通过按钮、Esc 还是窗口关闭而消失，都要复位，否则后续点 X 既不出弹窗也关不掉
+      m.then(() => { closePromptOpen = false; });
       function choose(action) {
         const r = remember.checked;
         closePromptOpen = false;
@@ -474,6 +478,28 @@
     window.addEventListener('drop', async (e) => {
       e.preventDefault();
       hideDropTip();
+      // 拖入本地文件：整合包 zip 直接识别并询问是否安装
+      const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
+      const zip = files.find((f) => /\.zip$/i.test(f.name || ''));
+      if (zip) {
+        const p = window.smcl.pathForFile ? window.smcl.pathForFile(zip) : zip.path;
+        if (!p) {
+          window.Toast.warn('无法读取该文件的路径，请改用「整合包 → 选择文件」');
+          return;
+        }
+        const ok = await window.Modal.confirm({
+          title: '导入整合包',
+          message: '检测到整合包文件：' + zip.name,
+          detail: '将自动识别格式并创建实例（可先预览再确认安装）',
+          okText: '去导入',
+        });
+        if (!ok) return;
+        if (window.app.current !== 'packs') window.app.goto('packs');
+        setTimeout(() => {
+          if (window.Pages.packs && window.Pages.packs.importPath) window.Pages.packs.importPath(p);
+        }, 360);
+        return;
+      }
       const dt = e.dataTransfer || {};
       const text = dt.getData('text/uri-list') || dt.getData('text/plain') || '';
       let mm = String(text).match(/https?:\/\/[^\s"'<>]+/i);

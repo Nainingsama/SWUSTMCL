@@ -6,7 +6,7 @@
   const { h } = window.Dom;
   let openModals = [];
 
-  function open({ title, body, footer, size = '' }) {
+  function open({ title, body, footer, size = '', dismissible = true }) {
     const root = document.getElementById('modalRoot');
     const overlay = h('div.modal-overlay');
     const modal = h(`div.modal.${size}`);
@@ -24,19 +24,17 @@
 
     const headEl = h('div.modal-head', null,
       h('div.modal-title.grow', null, title || ''),
-      h('button.iconbtn.pressable', { onclick: () => close(null), title: '关闭', innerHTML:
-        '<svg width="12" height="12" viewBox="0 0 10 10"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" stroke-width="1.4"/></svg>' }),
+      dismissible ? h('button.iconbtn.pressable', { onclick: () => close(null), title: '关闭', innerHTML:
+        '<svg width="12" height="12" viewBox="0 0 10 10"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" stroke-width="1.4"/></svg>' }) : null,
     );
 
     const footEl = footer ? h('div.modal-foot', null, ...[].concat(footer)) : null;
     modal.append(headEl, bodyEl, ...(footEl ? [footEl] : []));
     overlay.append(modal);
 
-    overlay.addEventListener('mousedown', (e) => {
-      if (e.target === overlay) close(null);
-    });
+    // 只有可关闭的弹窗才响应 Esc；点击遮罩一律不关闭（从浏览器授权返回时很容易误触空白处）
     document.addEventListener('keydown', function esc(e) {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && dismissible) {
         close(null);
         document.removeEventListener('keydown', esc);
       }

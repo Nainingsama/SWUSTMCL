@@ -117,6 +117,7 @@
   let page = 1; // 当前页（从 1 开始）
   const PAGE_SIZE = 24;
   let searching = false;
+  let searchSeq = 0; // 快速切换源/连续输入时，只认最后一次请求的结果
 
   /** 单源请求（q 可覆盖关键词，用于降级到「全部版本热门」） */
   const req = (source, gv, offset, q) => window.smcl.contentSearch({
@@ -135,7 +136,7 @@
    * - 空关键词不带版本过滤；有关键词且该版本 0 适配时自动去版本过滤重试
    */
   async function doSearch(pageNum = 1) {
-    if (searching) return;
+    const mySeq = ++searchSeq;
     searching = true;
     page = Math.max(1, pageNum);
     const grid = rootEl.querySelector('#resGrid');
@@ -173,6 +174,7 @@
         jobs.push(req('modrinth', gv, offset));
       }
       const [first] = await Promise.all(jobs);
+      if (mySeq !== searchSeq) return; // 已切换到别的源/更新的关键词，丢弃本次结果
       const mr = state.source === 'curseforge' ? { hits: [], total: 0 } : (first || { hits: [], total: 0 });
       const cf = state.source === 'curseforge' ? (first || { hits: [], total: 0 }) : null;
 
@@ -196,6 +198,7 @@
         degraded = true;
       }
 
+      if (mySeq !== searchSeq) return;
       state.hits = hits;
       state.total = total;
       state.effectiveGv = degraded ? '' : (filters.gameVersion || '');
@@ -208,11 +211,33 @@
         hint2.innerHTML = '提示：Modrinth / CurseForge 都以英文索引资源，中文一般搜不到 —— 请使用英文名（中文译名可在 MC百科 查询）';
       }
     } catch (e) {
-      window.Dom.clear(grid).append(
-        h('div.empty', { style: { gridColumn: '1/-1' } }, h('div.empty-icon', null, '📡'), e.message.replace(/^Error: /, '')),
-      );
+      if (mySeq !== searchSeq) return;
+      const msg = e.message.replace(/^Error: /, '');
+      if (/API Key/i.test(msg)) {
+        window.Dom.clear(grid).append(
+          h('div.empty', { style: { gridColumn: '1/-1', gap: '10px' } },
+            h('div.empty-icon', null, '🔑'),
+            h('div', null, 'CurseForge 需要 API Key 才能搜索'),
+            h('div.row', { style: { justifyContent: 'center', marginTop: '4px' } },
+              h('button.btn.btn-primary.btn-sm.pressable', {
+                onclick: () => {
+                  window.app.goto('settings');
+                  if (window.Pages.settings && window.Pages.settings.focusCfKey) window.Pages.settings.focusCfKey();
+                },
+              }, '前往设置填写'),
+              h('button.btn.btn-ghost.btn-sm.pressable', {
+                onclick: () => window.smcl.openUrl('https://console.curseforge.com/').catch(() => {}),
+              }, '申请 API Key ↗'),
+            ),
+          ),
+        );
+      } else {
+        window.Dom.clear(grid).append(
+          h('div.empty', { style: { gridColumn: '1/-1' } }, h('div.empty-icon', null, '📡'), msg),
+        );
+      }
     } finally {
-      searching = false;
+      if (mySeq === searchSeq) searching = false;
     }
   }
 

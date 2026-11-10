@@ -578,3 +578,80 @@ body:not(.theme-light) .ver-topbar .btn:not(.btn-primary):not(.btn-danger) {
   background: rgba(26, 32, 46, 0.88);
   border-color: rgba(255, 255, 255, 0.12);
 }
+
+/* 左侧实例栏：按启动器分大目录 */
+.ver-side-group { margin-top: 8px; flex: none; }
+.ver-side-group-head {
+  display: flex; align-items: center; gap: 7px;
+  padding: 6px 8px 2px;
+  font-size: 12px; font-weight: 700; letter-spacing: .2px;
+  color: var(--text-dim);
+}
+.ver-side-group-head .badge { flex: none; }
+.ver-side-group-path {
+  padding: 0 8px 4px 31px;
+  font-size: 10.5px; color: var(--text-dim); opacity: .75;
+}
+.ver-side-child { padding-left: 22px; margin-left: 6px; border-left: 1px solid var(--card-border); border-radius: 0 9px 9px 0; }
+.ver-side-child.chosen { border-left-color: var(--accent); }
+
+/* 内存分配：滑块 + 手动输入 + 自动平衡 */
+.slider-wrap { flex-wrap: wrap; align-items: center; }
+.mem-input {
+  width: 96px; min-width: 96px; text-align: right;
+  padding: 6px 8px; font-variant-numeric: tabular-nums;
+}
+.mem-unit { font-size: 12px; color: var(--text-dim); }
+.mem-auto-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: none; border: none; padding: 2px 4px; cursor: pointer;
+  color: var(--text-dim); font-size: 12.5px; border-radius: 8px;
+}
+.mem-auto-btn:hover { color: var(--text); }
+.mem-auto-btn .switch { pointer-events: none; }
+.mem-auto-btn .badge { flex: none; }
+
+
+/* 状态卡：宽度不够时改为单列，文字不竖排 */
+.status-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.status-tile { min-width: 0; }
+.status-tile .st-label, .status-tile .st-value { min-width: 0; }
+.status-tile .st-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* 设置行：控件过宽时换行，描述不被压成竖排 */
+.set-row { flex-wrap: wrap; }
+.set-row-main { flex: 1 1 240px; min-width: 200px; }
+.set-row-ctl { flex: 0 1 auto; max-width: 100%; flex-wrap: wrap; }
+
+/* 实例栏分组头 */
+.ver-side-group-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 6px; margin-top: 2px;
+  border-radius: 8px; cursor: pointer;
+}
+.ver-side-group-head:hover { background: rgba(255, 255, 255, 0.05); }
+body.theme-light .ver-side-group-head:hover { background: rgba(20, 30, 50, 0.05); }
+.ver-side-group-head .grp-caret { width: 12px; flex: none; color: var(--text-dim); font-size: 12px; text-align: center; }
+.ver-side-group-head .grp-name { font-size: 12.5px; font-weight: 700; flex: none; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ver-side-group-head .grp-path { font-size: 10.5px; color: var(--text-faint); min-width: 0; flex: 1 1 auto; }
+.ver-side-group-head .badge { flex: none; }
+.ver-side-group-head .grp-more {
+  flex: none; opacity: 0; width: 22px; height: 22px; line-height: 1;
+  font-size: 14px; color: var(--text-dim);
+}
+.ver-side-group-head:hover .grp-more { opacity: 1; }
+.ver-side-child { margin-left: 10px; }
+
+
+/* 内存行：滑杆 + 手输 + 自动开关 */
+.mem-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-width: 0; }
+.mem-row .slider-wrap { flex: 1 1 200px; min-width: 160px; margin: 0; }
+.mem-row .mem-input { width: 96px; min-width: 96px; }
+.mem-hint { font-size: 12.5px; color: var(--text-dim); }
+.cf-flash { animation: cfFlash 1.6s ease; border-radius: 10px; }
+@keyframes cfFlash { 0%, 100% { background: transparent; } 20%, 60% { background: var(--accent-soft); } }
+
+/* 分组头：让路径显示更多 */
+.ver-side-group-head .grp-name { max-width: 34%; }
+.ver-side-group-head .grp-path { font-size: 10px; }
+.ver-side-group-head .grp-more { opacity: .45; }

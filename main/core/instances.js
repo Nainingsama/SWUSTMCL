@@ -50,9 +50,16 @@ function saveSettings(instanceDir, patch = {}) {
         break;
       }
       case 'memory': {
+        // 空 / 0 / 负数 = 跟随全局设置（不写入实例覆盖）
         if (v === null || v === '' || v === undefined) { out.memory = 0; break; }
         const n = Number(v);
-        if (!Number.isFinite(n) || n < 512 || n > 32768) throw new Error('内存无效（512~32768 MB）');
+        if (!Number.isFinite(n) || n < 0) throw new Error('内存无效：留空跟随全局，或填 256 以上');
+        if (n === 0) { out.memory = 0; break; }
+        const totalMB = Math.floor(require('os').totalmem() / 1048576);
+        const cap = Math.max(2048, Math.min(65536, Math.floor((totalMB * 0.9) / 512) * 512));
+        if (n < 256 || n > cap) {
+          throw new Error('内存无效：请填 256~' + cap + ' MB（本机物理内存约 ' + Math.round(totalMB / 1024) + ' GB），留空跟随全局');
+        }
         out.memory = Math.round(n);
         break;
       }

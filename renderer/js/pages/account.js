@@ -232,6 +232,7 @@
     };
     api = window.Modal.open({
       title: '添加角色',
+      dismissible: false, // 授权过程中误点空白处会中断等待，必须显式点取消
       body: bodyFn,
       footer: [
         h('button.btn.pressable', { onclick: () => api && api.close(null) }, '取消'),

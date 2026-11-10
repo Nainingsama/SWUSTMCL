@@ -86,18 +86,133 @@
     window.Dom.clear(side);
     side.append(
       h('div.ver-side-row.ver-side-all' + (!selectedId ? '.chosen' : ''), {
-        onclick: () => { selectedId = ''; window.Store.set({ selectedInstance: '' }); drawAll(); },
+        dataset: { vid: '' },
+        onclick: () => selectInstanceById(''),
       }, svgIcon('cubes', 17), h('span.ellipsis.grow', null, '全部实例'), h('span.badge', null, String(all.length))),
     );
+    // 按启动器（游戏目录来源）分大目录，可折叠 / 改名 / 打开目录
+    const GROUPS = [
+      ['primary', '当前文件夹'],
+      ['official', '官方启动器'],
+      ['PCL', 'PCL'],
+      ['HMCL', 'HMCL'],
+      ['BakaXL', 'BakaXL'],
+      ['custom', '自定义文件夹'],
+    ];
+    const kindLabel = (k) => (GROUPS.find((g) => g[0] === k) || [k, k || '其他'])[1];
+    const customNames = (window.Store.get('settings') || {}).dirNames || {};
+    let collapsedDirs = [];
+    try { collapsedDirs = JSON.parse(localStorage.getItem('swustmcl.collapsedDirs') || '[]') || []; } catch {}
+    const isCollapsed = (dir) => collapsedDirs.some((d) => d.toLowerCase() === String(dir).toLowerCase());
+
+    const byKind = new Map();
     for (const v of all) {
-      side.append(h('div.ver-side-row' + (v.id === selectedId ? '.chosen' : ''), {
-        title: v.id,
-        onclick: () => { selectedId = v.id; window.Store.set({ selectedInstance: v.id }); drawAll(); },
+      const k = v.kind || 'custom';
+      if (!byKind.has(k)) byKind.set(k, []);
+      byKind.get(k).push(v);
+    }
+    const order = GROUPS.map((g) => g[0]);
+    const kinds = [...byKind.keys()].sort((a, b) => {
+      const ia = order.indexOf(a); const ib = order.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
+
+    function openDirMenu(dir, name, anchor) {
+      const panel = h('div.menu-panel.float-panel');
+      const close = () => { panel.remove(); document.removeEventListener('mousedown', onDoc, true); };
+      const onDoc = (ev) => { if (!panel.contains(ev.target)) close(); };
+      panel.append(
+        h('button.menu-item', {
+          onclick: () => { close(); renameDir(dir, name); },
+        }, svgIcon('gear', 15), '改名'),
+        h('button.menu-item', {
+          onclick: () => { close(); window.smcl.openPath(dir).catch((e) => window.Toast.error(e.message)); },
+        }, svgIcon('folder', 15), '打开文件夹'),
+      );
+      document.body.append(panel);
+      const r = anchor.getBoundingClientRect();
+      const pw = panel.offsetWidth || 172;
+      const ph = panel.offsetHeight || 96;
+      let left = Math.min(r.left, window.innerWidth - pw - 12);
+      let top = r.bottom + 6;
+      if (top + ph > window.innerHeight - 12) top = Math.max(12, r.top - ph - 6);
+      panel.style.left = Math.max(8, left) + 'px';
+      panel.style.top = top + 'px';
+      setTimeout(() => document.addEventListener('mousedown', onDoc, true), 0);
+    }
+
+    function renameDir(dir, oldName) {
+      let input;
+      const m = window.Modal.open({
+        title: '自定义启动器名称',
+        body: (el) => {
+          input = h('input.input', { value: oldName || '', placeholder: '例如：PCL、官方启动器、我的整合包目录' });
+          el.append(
+            h('div.field', null, h('span.field-label', null, '显示名称'), input),
+            h('div.faint.mt-8', { style: { wordBreak: 'break-all', userSelect: 'text' } }, dir),
+          );
+        },
+        footer: [
+          h('button.btn.pressable', { onclick: () => m.close(null) }, '取消'),
+          h('button.btn.btn-primary.pressable', {
+            onclick: async () => {
+              const val = String(input.value || '').trim();
+              if (!val) { window.Toast.warn('名称不能为空'); return; }
+              try {
+                const cur = (window.Store.get('settings') || {}).dirNames || {};
+                const next = { ...cur, [dir]: val };
+                const r = await window.smcl.save({ dirNames: next });
+                const settings = (r && r.settings) ? Object.assign({}, window.Store.get('settings') || {}, { dirNames: next }) : { ...(window.Store.get('settings') || {}), dirNames: next };
+                window.Store.set({ settings });
+                m.close(true);
+                window.Toast.success('已重命名为：' + val);
+                drawAll();
+              } catch (e) { window.Toast.error(e.message.replace(/^Error: /, '')); }
+            },
+          }, '保存'),
+        ],
+      });
+      setTimeout(() => input && input.focus(), 40);
+    }
+
+    for (const k of kinds) {
+      const items = byKind.get(k);
+      const dirOf = items[0].dir || '';
+      const label = customNames[dirOf] || kindLabel(k);
+      const collapsed = isCollapsed(dirOf);
+      const head = h('div.ver-side-group-head' + (collapsed ? '.collapsed' : ''), {
+        title: (collapsed ? '展开' : '收起') + '：' + dirOf,
+        onclick: (ev) => {
+          if (ev.target.closest('.grp-more')) return;
+          collapsedDirs = collapsed
+            ? collapsedDirs.filter((d) => d.toLowerCase() !== dirOf.toLowerCase())
+            : [...collapsedDirs, dirOf];
+          try { localStorage.setItem('swustmcl.collapsedDirs', JSON.stringify(collapsedDirs)); } catch {}
+          drawAll();
+        },
       },
-        h('span.loader-mini', { innerHTML: window.LoaderIcon.svg(v.loader, 16) }),
-        h('span.ellipsis.grow', null, v.displayName || v.id),
-        h('span.faint', { style: { fontSize: '11px', flex: 'none' } }, v.mcVersion || ''),
-      ));
+        h('span.grp-caret', null, collapsed ? '›' : '⌄'),
+        h('span.grp-name', null, label),
+        h('span.grp-path.ellipsis', null, dirOf),
+        h('span.badge', null, String(items.length)),
+        h('button.iconbtn.grp-more', {
+          title: '更多',
+          onclick: (ev) => { ev.stopPropagation(); openDirMenu(dirOf, label, ev.currentTarget); },
+        }, '…'),
+      );
+      side.append(head);
+      if (collapsed) continue;
+      for (const v of items) {
+        side.append(h('div.ver-side-row.ver-side-child' + (v.id === selectedId ? '.chosen' : ''), {
+          title: v.dir + '\\versions\\' + v.id,
+          dataset: { vid: v.id },
+          onclick: () => selectInstanceById(v.id),
+        },
+          h('span.loader-mini', { innerHTML: window.LoaderIcon.svg(v.loader, 16) }),
+          h('span.ellipsis.grow', null, v.displayName || v.id),
+          h('span.faint', { style: { fontSize: '11px', flex: 'none' } }, v.mcVersion || ''),
+        ));
+      }
     }
     side.append(
       h('span.spacer'),
@@ -106,11 +221,27 @@
       h('button.ver-side-btn', { onclick: () => window.app.goto('settings') }, svgIcon('gear', 14), '全局游戏设置'),
     );
 
-    // ---------- 右：详情 或 全部实例 ----------
+    renderRight(all, mainEl);
+  }
+
+  /** 只重绘右侧（选中实例 / 切换视图时用，左侧栏保持不变） */
+  const detailNodeCache = new Map();
+  function renderRight(all, mainEl) {
+    mainEl = mainEl || (rootEl && rootEl.querySelector('#verMain'));
+    if (!mainEl) return;
     window.Dom.clear(mainEl);
     if (selectedId) {
       const dv = all.find((x) => x.id === selectedId);
-      if (dv) { mainEl.append(detailView(dv)); return; }
+      if (dv) {
+        // 8 秒内复用同一个详情节点：来回切换实例不再重建概览（体感明显更跟手）
+        const key = dv.dir + '|' + dv.id;
+        const hit = detailNodeCache.get(key);
+        if (hit && Date.now() - hit.t < 8000) { mainEl.append(hit.node); return; }
+        const node = detailView(dv);
+        detailNodeCache.set(key, { node, t: Date.now() });
+        mainEl.append(node);
+        return;
+      }
     }
     const launchTargetId = window.Store.get('homeVersionId') || (all[0] && all[0].id);
     const sel = all.find((v) => v.id === launchTargetId);
@@ -123,11 +254,18 @@
       h('option', { value: 'version', selected: sortMode === 'version' }, '游戏版本'),
       h('option', { value: 'size', selected: sortMode === 'size' }, '占用空间'),
     );
-    const searchInp = h('input.input', {
+    const searchInp = h('input.input#verSearch', {
       value: query,
       placeholder: '搜索实例…',
       style: { maxWidth: '190px' },
-      oninput: window.Dom.debounce((e) => { query = e.target.value.trim().toLowerCase(); drawAll(); }, 150),
+      oninput: window.Dom.debounce((e) => {
+        query = e.target.value.trim().toLowerCase();
+        const caret = e.target.selectionStart;
+        drawAll();
+        // 重绘后把焦点和光标还给搜索框，否则输一个字符就会失焦
+        const next = rootEl && rootEl.querySelector('#verSearch');
+        if (next) { next.focus(); try { next.setSelectionRange(caret, caret); } catch {} }
+      }, 180),
     });
     const launchSel = h('button.btn.btn-primary.btn-sm.pressable', {
       title: sel ? '启动 ' + sel.id : '没有可启动的实例',
@@ -166,6 +304,26 @@
       for (const v of filtered) rows.append(rowOf(v));
       content.append(rows);
     }
+  }
+
+  /** 选中实例：只切换左侧高亮 + 重绘右侧，避免整个列表重建造成的卡顿 */
+  let selRenderTimer = null;
+  function selectInstanceById(id) {
+    selectedId = id || '';
+    window.Store.set({ selectedInstance: selectedId });
+    const sideEl = rootEl && rootEl.querySelector('#verSide');
+    if (sideEl) {
+      sideEl.querySelectorAll('.ver-side-row').forEach((row) => {
+        row.classList.toggle('chosen', row.dataset.vid === selectedId);
+      });
+    }
+    if (selRenderTimer) clearTimeout(selRenderTimer);
+    const targetId = selectedId;
+    selRenderTimer = setTimeout(() => {
+      selRenderTimer = null;
+      if (selectedId !== targetId) return; // 已被更新的点击覆盖
+      renderRight(installedSorted(), rootEl && rootEl.querySelector('#verMain'));
+    }, 40);
   }
 
   function selectInstance(v) {
@@ -468,7 +626,7 @@
       window.Dom.clear(pane);
       const nameInput = h('input.input', { value: cfg.displayName || '', placeholder: '留空则使用实例目录名' });
       const javaInput = h('input.input.mono', { value: cfg.javaPath || '', placeholder: '留空则使用全局设置（javaw.exe）' });
-      const memInput = h('input.input.tnum', { value: cfg.memory ? String(cfg.memory) : '', placeholder: '留空则使用全局设置' });
+      const memInput = h('input.input.tnum', { value: cfg.memory ? String(cfg.memory) : '', placeholder: '留空则使用全局设置', min: '256', step: '512' });
       const jvmInput = h('input.input.mono', { value: cfg.jvmArgs || '', placeholder: '留空则使用全局设置' });
       const renameInput = h('input.input', { value: v.id });
       const isolateSel = h('select.select', null,
@@ -486,7 +644,7 @@
           ),
           javaInput,
         ),
-        h('div.field.mt-8', null, h('span.field-label', null, '内存（MB，留空跟随全局）'), memInput),
+        h('div.field.mt-8', null, h('span.field-label', null, '内存（MB，留空跟随全局；建议不超过物理内存的 60%）'), memInput),
         h('div.field.mt-8', null, h('span.field-label', null, 'JVM 参数'), jvmInput),
         h('div.field.mt-8', null, h('span.field-label', null, '版本隔离'), isolateSel),
         h('hr.divider'),
@@ -803,6 +961,7 @@
 
   window.Pages = window.Pages || {};
   window.Pages.versions = {
+    invalidateDetailCache() { detailNodeCache.clear(); },
     openModManager,
     openDetail,
     render(root) { render(root); },

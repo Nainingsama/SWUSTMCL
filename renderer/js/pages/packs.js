@@ -205,6 +205,8 @@
   window.Pages.packs = {
     render,
     onShow() {},
+    // 供全局拖拽调用：直接进入预览流程
+    importPath(file) { return pickPath(file); },
     onProgress(p) {
       const bar = document.getElementById('packBar');
       if (!bar) return;
