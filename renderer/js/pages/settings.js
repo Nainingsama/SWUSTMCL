@@ -466,7 +466,19 @@
       }
       window.app.showUpdateModal(r);
     } catch (e) {
-      window.Toast.error(e.message.replace(/^Error: /, ''));
+      const msg = String(e.message || e).replace(/^Error: /, '');
+      if (/fetch failed|连接更新服务器|network|ENOTFOUND|ETIMEDOUT/i.test(msg)) {
+        window.Modal.confirm({
+          title: '无法连接更新服务器',
+          message: '当前网络无法访问 GitHub（更新检查和下载都会被限制）。',
+          detail: '可以前往 Releases 页面手动下载；如果页面也打不开，给下载链接加加速前缀，例如 https://gh-proxy.com/ 加在原链接前。',
+          okText: '打开下载页',
+        }).then((ok) => {
+          if (ok) window.smcl.openUrl('https://github.com/Nainingsama/SWUSTMCL/releases').catch(() => {});
+        });
+      } else {
+        window.Toast.error(msg);
+      }
     }
   }
 

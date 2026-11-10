@@ -1,0 +1,18 @@
+{
+  "version": "1.1.1",
+  "notes": "1.1.1：更新检查在 GitHub 不可达时回退镜像清单；更新包下载卡顿自动切换加速镜像。",
+  "assets": [
+    {
+      "name": "SWUSTMCL-1.1.1-win-x64.zip",
+      "size": 124678888,
+      "sha256": "de54eef07f74cf484cfcf5e45835bfb9c981cf6a4277aa0bd9e8335f32d74da7",
+      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.1.1/SWUSTMCL-1.1.1-win-x64.zip"
+    },
+    {
+      "name": "SWUSTMCL-1.1.1-Setup-x64.exe",
+      "size": 94375902,
+      "sha256": "12c1ab71834805b60fcd3fb92ebe710357054f633e96611239d5f289ccdf3198",
+      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.1.1/SWUSTMCL-1.1.1-Setup-x64.exe"
+    }
+  ]
+}
