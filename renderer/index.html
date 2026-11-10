@@ -79,6 +79,10 @@
             <span class="nav-icon"><svg viewBox="0 0 20 20" width="18" height="18"><path d="M3 9.5L10 3l7 6.5V17a1 1 0 01-1 1h-4v-5H8v5H4a1 1 0 01-1-1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span>
             <span>首页</span>
           </button>
+          <button class="nav-item" data-view="domains">
+            <span class="nav-icon"><svg viewBox="0 0 20 20" width="18" height="18"><circle cx="10" cy="10" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 10h13M10 3.5c2.2 2.2 2.2 10.8 0 13M10 3.5c-2.2 2.2-2.2 10.8 0 13" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></span>
+            <span>域</span>
+          </button>
           <button class="nav-item" data-view="account">
             <span class="nav-icon"><svg viewBox="0 0 20 20" width="18" height="18"><circle cx="10" cy="6.5" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 17c1-3.4 3.6-5 6.5-5s5.5 1.6 6.5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
             <span>账户</span>
@@ -128,6 +132,7 @@
       <main class="main" id="main">
         <div class="views" id="views">
           <section class="view active" data-view="home"></section>
+          <section class="view" data-view="domains"></section>
           <section class="view" data-view="versions"></section>
           <section class="view" data-view="servers"></section>
           <section class="view" data-view="download"></section>
@@ -176,6 +181,7 @@
   <script src="js/sidebar.js"></script>
   <script src="js/skinview.js"></script>
   <script src="js/pages/home.js"></script>
+  <script src="js/pages/domains.js"></script>
   <script src="js/pages/versions.js"></script>
   <script src="js/pages/servers.js"></script>
   <script src="js/pages/download.js"></script>

@@ -12,7 +12,7 @@ const on = (channel, cb) => {
 };
 
 contextBridge.exposeInMainWorld('smcl', {
-  version: '1.0.0',
+  version: '1.1.1',
 
   // 应用 / 窗口
   state: () => ipcRenderer.invoke('app:state'),
@@ -119,6 +119,20 @@ contextBridge.exposeInMainWorld('smcl', {
   serversPing: (host, port) => ipcRenderer.invoke('servers:ping', { host, port }),
   serversSave: (entry) => ipcRenderer.invoke('servers:save', entry),
   serversRemove: (id) => ipcRenderer.invoke('servers:remove', id),
+
+  // 启动器域
+  domainsList: () => ipcRenderer.invoke('domains:list'),
+  domainsAdd: (input) => ipcRenderer.invoke('domains:add', { input }),
+  domainsRemove: (id) => ipcRenderer.invoke('domains:remove', { id }),
+  domainsRefresh: (id) => ipcRenderer.invoke('domains:refresh', { id }),
+  domainDownloadResource: (domainId, resourceId) =>
+    ipcRenderer.invoke('domains:downloadResource', { domainId, resourceId }),
+  domainInstallResource: (domainId, resourceId, instanceDir) =>
+    ipcRenderer.invoke('domains:installResource', { domainId, resourceId, instanceDir }),
+  onDomainAdded: (cb) => on('domains:added', cb),
+  onDomainError: (cb) => on('domains:error', cb),
+  onDomainResourceProgress: (cb) => on('domains:resourceProgress', cb),
+
   historyList: () => ipcRenderer.invoke('history:list'),
   instanceLog: (id, lines) => ipcRenderer.invoke('log:instance', { id, lines }),
   instanceLogClear: (id) => ipcRenderer.invoke('log:instance:clear', { id }),
