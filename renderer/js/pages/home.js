@@ -456,7 +456,7 @@
     if (managed) {
       list = ((domain.manifest && domain.manifest.servers) || []).map((srv) => ({
         id: srv.id, name: srv.name, host: srv.host, port: srv.port,
-        note: srv.note || '', instanceId: '', builtin: false, domain: true,
+        note: srv.note || '', instanceId: '', builtin: false, domain: true, pack: srv.pack || null,
       }));
     } else {
       try { list = await window.smcl.serversList(); } catch {}
@@ -477,6 +477,7 @@
           h('div.srv-name', null,
             srv.name,
             srv.builtin ? h('span.badge.badge-blue', { style: { marginLeft: '6px' } }, '校服') : null,
+            srv.pack ? h('span.badge.badge-orange', { style: { marginLeft: '6px' } }, srv.pack.policy === 'required' ? '必装整合包' : '可选整合包') : null,
           ),
           metaEl,
           h('div.faint.srv-bind', null,
@@ -513,6 +514,17 @@
     if (dom.managed && !dom.allowed) {
       window.Toast.warn('请先登录「' + dom.domain.name + '」域账号');
       window.app.goto('account');
+      return;
+    }
+    if (srv.pack && window.DomainPackJoin) {
+      try {
+        const prepared = await window.DomainPackJoin.prepareJoin(srv);
+        if (!prepared) return;
+        await window.smcl.launch(prepared.id, prepared.dir, { server: { host: srv.host, port: srv.port } });
+        window.Store.set({ gameRunning: true });
+      } catch (e) {
+        window.Toast.error(String(e.message || e).replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '').replace(/^Error:\s*/, ''));
+      }
       return;
     }
     const installed = window.Store.get('installed') || [];

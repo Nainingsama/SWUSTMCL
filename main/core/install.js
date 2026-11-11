@@ -134,7 +134,7 @@ async function install(id, entry, source, onProgress) {
   safe.assertVersionId(id);
   const osName = require('./rules').OS_NAME;
   const started = Date.now();
-  const mcDir = settingsLib.ensureGameDir();
+  const mcDir = (entry && entry.mcDir) || settingsLib.ensureGameDir();
   const versionDir = safe.safeJoin(path.join(mcDir, 'versions'), id);
   await fsp.mkdir(versionDir, { recursive: true });
 
@@ -148,7 +148,7 @@ async function install(id, entry, source, onProgress) {
 
   report({ stage: 'meta', message: '读取版本信息', percent: 2 });
 
-  const meta = await versionLib.getVersionMeta(entry, source);
+  const meta = entry && entry.meta ? entry.meta : await versionLib.getVersionMeta(entry, source);
   meta.id = id;
   await fsp.writeFile(path.join(versionDir, `${id}.json`), JSON.stringify(meta, null, 2), 'utf8');
 
