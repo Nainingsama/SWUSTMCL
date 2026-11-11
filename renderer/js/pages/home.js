@@ -149,7 +149,7 @@
   }
 
   // ------------------------------------------------------------ 首页组件化（拖拽 / 缩放 / 刷新）
-  const HOME_WIDGET_KEY = 'swustmcl.homeLayout.v12'; // 仅保存手动拖动/缩放的组件 // x/w 存比例，y/h 存像素
+  const HOME_WIDGET_KEY = 'swustmcl.homeLayout.v13'; // 仅保存手动拖动/缩放的组件 // x/w 存比例，y/h 存像素
   const W_MIN = { w: 260, h: 150 };
   const W_MAX = { w: 920, h: 820 };
   // 每类组件单独的最大尺寸：启动卡不需要拉太大，日历/服务器更能吃空间
@@ -229,6 +229,36 @@
       bindResize(canvas, holder, holder.querySelector('.widget-resize'));
     }
     updateCanvasHeight(canvas);
+
+    // 重叠自愈：旧缓存 / 新增组件可能导致卡片互相压住，检测到就整面板回到默认布局
+    try {
+      const items = Object.values(holders).filter((el) => el.style.display !== 'none');
+      let bad = false;
+      for (let i = 0; i < items.length && !bad; i++) {
+        const a = items[i].getBoundingClientRect();
+        for (let j = i + 1; j < items.length; j++) {
+          const b = items[j].getBoundingClientRect();
+          const ox = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+          const oy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+          if (ox > 6 && oy > 6) { bad = true; break; }
+        }
+      }
+      if (bad) {
+        localStorage.removeItem(HOME_WIDGET_KEY);
+        for (const w of widgets) {
+          const holder = holders[w.id];
+          const d = def[w.id];
+          if (!holder || !d) continue;
+          holder.style.left = d.x + 'px';
+          holder.style.top = d.y + 'px';
+          holder.style.width = d.w + 'px';
+          holder.style.height = d.h + 'px';
+        }
+        updateCanvasHeight(canvas);
+        console.info('[home] 检测到卡片重叠，已恢复默认布局');
+      }
+    } catch {}
+
     // 默认布局不写缓存：只有用户手动拖动/缩放时才保存，避免启动过程中的中间态被固化
     if (!home._resizeBound) {
       home._resizeBound = true;

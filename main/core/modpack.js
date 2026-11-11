@@ -37,7 +37,7 @@ function inspect(file) {
   try {
     ({ zip, entries } = readZip(file));
   } catch {
-    throw new Error('无法读取 zip 文件');
+    throw new Error('无法读取整合包文件（需要 .mrpack 或 .zip）');
   }
 
   const findEntry = (name) => entries.find((e) => e.entryName.replace(/\\/g, '/') === name && !e.isDirectory);
@@ -69,7 +69,7 @@ function inspect(file) {
     if (!hasOverrides) throw new Error('无法识别的整合包格式（缺少 modrinth.index.json / manifest.json / mods 目录）');
     format = 'raw';
     const modCount = entries.filter((e) => /^mods\/[^/]+\.jar$/i.test(e.entryName.replace(/\\/g, '/'))).length;
-    return { format, name: path.basename(file, '.zip'), mcVersion: '', loader: '', loaderVersion: '', modCount, files: [], overridesDir: '' };
+    return { format, name: path.basename(file).replace(/\.(zip|mrpack)$/i, ''), mcVersion: '', loader: '', loaderVersion: '', modCount, files: [], overridesDir: '' };
   }
 
   let mcVersion = '', loader = '', loaderVersion = '';
@@ -134,7 +134,7 @@ function inspect(file) {
 
   return {
     format,
-    name: manifest.name || path.basename(file, '.zip'),
+    name: manifest.name || path.basename(file).replace(/\.(zip|mrpack)$/i, ''),
     version: manifest.version || '',
     author: manifest.author || (manifest.authors || []).map((a) => a.name).join(', '),
     description: manifest.summary || '',
@@ -172,7 +172,7 @@ async function importPack(file, info, hooks = {}) {
   const mcDir = settingsLib.ensureGameDir();
   const { zip, entries } = readZip(file);
 
-  const baseName = (info.name || path.basename(file, '.zip')).replace(/[\\/:*?"<>|]/g, ' ').trim().slice(0, 48) || '整合包实例';
+  const baseName = (info.name || path.basename(file).replace(/\.(zip|mrpack)$/i, '')).replace(/[\\/:*?"<>|]/g, ' ').trim().slice(0, 48) || '整合包实例';
   const instanceId = uniqueInstanceId(mcDir, baseName);
   safe.assertVersionId(instanceId);
   const instanceDir = safe.safeJoin(path.join(mcDir, 'versions'), instanceId);

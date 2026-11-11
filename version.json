@@ -1,12 +1,18 @@
 {
   "version": "1.2.4",
-  "notes": "1.2.4：新增服务器整合包发布与进服策略；皮肤站管理员可从启动器发布隔离实例，支持必装/原版增强、最低 Java 与增量上传。",
+  "notes": "1.2.4：新增服务器整合包发布与进服策略；皮肤站管理员可从启动器发布隔离实例，支持必装/原版增强、最低 Java 与增量上传。整合包导入新增 .mrpack 支持；同时包含 1.2.3 的更新器修复（保留 userdata、单例进度卡、镜像下载）。",
   "assets": [
     {
       "name": "SWUSTMCL-1.2.4-win-x64.zip",
-      "size": 124653570,
-      "sha256": "c3ac6065d45e6afc3601b803027e683380e5f3403e6564f6b221fb6a3c2a0a4a",
+      "size": 124712784,
+      "sha256": "d575e2730e36a3d6f7f89274d5b834e7789c39ee5275370ff0b37ede6466b946",
       "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.4/SWUSTMCL-1.2.4-win-x64.zip"
+    },
+    {
+      "name": "SWUSTMCL-1.2.4-Setup-x64.exe",
+      "size": 94396309,
+      "sha256": "624c3ca7859c84c101063088a93b63bc73fd43b8486ff4ddcf18480127ca81bf",
+      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.4/SWUSTMCL-1.2.4-Setup-x64.exe"
     }
   ]
 }
