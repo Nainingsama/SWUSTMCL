@@ -4,9 +4,15 @@
   "assets": [
     {
       "name": "SWUSTMCL-1.2.1-win-x64.zip",
-      "size": 124635739,
-      "sha256": "05eec728177bd0100db3aac97980e60ebdcfa902b4c66dd428b67803754e7814",
+      "size": 124693790,
+      "sha256": "d88b2c43a5c7404d8349c17d42def77073a26a695e5482e868305c464b81409f",
       "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.1/SWUSTMCL-1.2.1-win-x64.zip"
+    },
+    {
+      "name": "SWUSTMCL-1.2.1-Setup-x64.exe",
+      "size": 94384730,
+      "sha256": "b56e1a60596a81c61c0d1e45d2a96abe360c9f28e0ea2802ea13b1845555c78e",
+      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.1/SWUSTMCL-1.2.1-Setup-x64.exe"
     }
   ]
 }
