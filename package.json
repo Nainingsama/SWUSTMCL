@@ -1,7 +1,7 @@
 {
   "name": "swustmcl",
   "productName": "SWUSTMCL",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "星启 SWUSTMCL — 西南科技大学 Minecraft 启动器",
   "main": "main/main.js",
   "author": "SWUSTMCL Contributors",
