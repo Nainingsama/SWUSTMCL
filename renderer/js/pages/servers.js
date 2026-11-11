@@ -59,6 +59,7 @@
         instanceId: '',
         builtin: false,
         domain: true,
+        pack: srv.pack || null,
       }));
     } else {
       try { list = await window.smcl.serversList(); } catch {}
@@ -163,6 +164,7 @@
           h('div.srv-name-row', null,
             h('span.srv-name.ellipsis', { title: srv.name }, srv.name),
             srv.builtin ? h('span.badge.badge-blue', null, '校服') : null,
+            srv.pack ? h('span.badge.badge-orange', null, srv.pack.policy === 'required' ? '必装' : '可选') : null,
           ),
           h('div.faint', null, srv.domain ? '来自域 · 由管理员维护' : srv.instanceId ? (boundOk ? '绑定实例：' + srv.instanceId : '绑定实例未安装：' + srv.instanceId) : '未绑定整合包'),
         ),
@@ -187,7 +189,7 @@
       dot,
       rowAvatarEl,
       h('div.grow', { style: { minWidth: 0 } },
-        h('div.ver-row-name.ellipsis', { title: srv.name }, srv.name + (srv.builtin ? '（校服）' : '')),
+        h('div.ver-row-name.ellipsis', { title: srv.name }, srv.name + (srv.builtin ? '（校服）' : '') + (srv.pack ? (srv.pack.policy === 'required' ? '（必装整合包）' : '（可选整合包）') : '')),
         meta,
       ),
       h('span.mono.faint', { style: { flex: 'none' } }, srv.host + ':' + srv.port),
@@ -282,6 +284,12 @@
   }
 
   function joinFlow(srv) {
+    if (srv.pack && window.DomainPackJoin) {
+      window.DomainPackJoin.prepareJoin(srv).then((prepared) => {
+        if (prepared) launchJoin(prepared, srv);
+      }).catch((e) => window.Toast.error(String(e.message || e)));
+      return;
+    }
     const installed = window.Store.get('installed') || [];
     let inst = installed.find((v) => v.id === srv.instanceId);
     if (!inst) {

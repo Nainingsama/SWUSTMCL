@@ -373,6 +373,11 @@
         h('button.iconbtn', { title: '打开文件夹', onclick: (e) => { e.stopPropagation(); openFolderOf(v); } }, svgIcon('folder', 15)),
         h('button.iconbtn', { title: '模组管理', onclick: (e) => { e.stopPropagation(); openDetail(v, '模组'); } }, svgIcon('list', 15)),
         h('button.iconbtn', { title: '实例详情', onclick: (e) => { e.stopPropagation(); openDetail(v); } }, svgIcon('gear', 15)),
+        (() => {
+          const d = window.DomainContext && window.DomainContext.active ? window.DomainContext.active() : null;
+          if (!d || d.personal || !v.isolated || !window.PublishPack) return null;
+          return h('button.iconbtn', { title: '发布到社团域', onclick: (e) => { e.stopPropagation(); window.PublishPack.open(v); } }, svgIcon('export', 15));
+        })(),
         h('button.iconbtn', { title: '删除实例', style: { color: '#ff6369' }, onclick: (e) => { e.stopPropagation(); deleteOne(v); } }, svgIcon('trash', 15)),
       ),
     );
@@ -389,8 +394,12 @@
       ['实例详情', () => openDetail(v), false, 'gear'],
       ['体检补全', () => repairOne(v), false, 'refresh'],
       ['导出整合包', () => window.app.goto('packs'), false, 'export'],
-      ['删除实例', () => deleteOne(v), true, 'trash'],
     ];
+    const domain = window.DomainContext && window.DomainContext.active ? window.DomainContext.active() : null;
+    if (domain && !domain.personal && v.isolated && window.PublishPack) {
+      items.push(['发布到社团域', () => window.PublishPack.open(v), false, 'export']);
+    }
+    items.push(['删除实例', () => deleteOne(v), true, 'trash']);
     for (const [label, fn, danger, ic] of items) {
       panel.append(h('button.menu-item' + (danger ? '.danger' : ''), { onclick: () => { close(); fn(); } }, svgIcon(ic, 15), label));
     }

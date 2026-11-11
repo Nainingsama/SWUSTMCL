@@ -104,6 +104,7 @@ const core = {
   authlib: require('./core/authlib'),
   servers: require('./core/servers'),
   domains: require('./core/domains'),
+  domainpacks: require('./core/domainpacks'),
   history: require('./core/history'),
   instancelog: require('./core/instancelog'),
   instanceassets: require('./core/instanceassets'),
@@ -912,6 +913,11 @@ ipcMain.handle('game:launch', async (_e, payload) => {
     }
   }
   const meta = core.versions.loadVersionJson(dir, id);
+  let packMinJava = 0;
+  try {
+    const marker = core.domainpacks.readMarker(path.join(dir || settingsLib.ensureGameDir(), 'versions', id));
+    packMinJava = Number(marker.minJava) || 0;
+  } catch {}
 
   // 启动前体检：库/资源缺失会自动补全（否则 Fabric 等加载器会 ClassNotFoundException）
   try {
@@ -936,9 +942,15 @@ ipcMain.handle('game:launch', async (_e, payload) => {
 
   // Java：按版本要求自动挑选
   let javaPath = s.javaPath;
+  if (javaPath && packMinJava) {
+    const info = await core.java.runJavaVersion(javaPath).catch(() => null);
+    if (!info || info.major < packMinJava) {
+      throw new Error(`该整合包要求 Java ${packMinJava}+，当前指定的 Java 版本过低，请到实例设置或「设置 → Java」更换`);
+    }
+  }
   if (!javaPath) {
     const javas = await core.java.detect({ mcDirs: gameDirs().map((d) => d.path), preferred: '' });
-    const required = (meta.javaVersion && meta.javaVersion.majorVersion) || 8;
+    const required = Math.max((meta.javaVersion && meta.javaVersion.majorVersion) || 8, packMinJava);
     const picked = core.java.pick(javas, required);
     if (!picked) {
       // 自动下载缺失的 Java 运行时（清华 Adoptium 镜像优先，任务卡可见）
@@ -1474,6 +1486,93 @@ ipcMain.handle('domains:add', (_e, payload) => {
 });
 ipcMain.handle('domains:remove', (_e, payload) => core.domains.remove(String((payload && payload.id) || '')));
 ipcMain.handle('domains:refresh', (_e, payload) => core.domains.refresh(String((payload && payload.id) || '')));
+ipcMain.handle('domainpacks:scan', async (_e, payload) => {
+  const scan = await core.domainpacks.scanInstance(
+    String((payload && payload.dir) || ''),
+    String((payload && payload.id) || '')
+  );
+  const { versionJson, ...instance } = scan.instance;
+  const instanceDir = path.join(String((payload && payload.dir) || ''), 'versions', String((payload && payload.id) || ''));
+  const marker = core.domainpacks.readMarker(instanceDir);
+  const activeDomain = core.domains.active();
+  const sameDomain = marker.packId && marker.domainId === activeDomain.id;
+  return {
+    instance,
+    fileCount: scan.files.length,
+    totalSize: scan.totalSize,
+    marker: sameDomain ? {
+      packId: marker.packId,
+      packName: marker.packName || '',
+      version: Number(marker.version) || 0,
+      minJava: Number(marker.minJava) || 0,
+      policy: marker.policy || '',
+      serverId: marker.serverId || '',
+    } : null,
+  };
+});
+ipcMain.handle('domainpacks:publish', async (_e, payload) => {
+  return core.domainpacks.publish({
+    domainId: String((payload && payload.domainId) || ''),
+    dir: String((payload && payload.dir) || ''),
+    instanceId: String((payload && payload.instanceId) || ''),
+    serverId: String((payload && payload.serverId) || ''),
+    policy: String((payload && payload.policy) || 'optional'),
+    minJava: Number((payload && payload.minJava) || 0),
+    notes: String((payload && payload.notes) || ''),
+    name: String((payload && payload.name) || ''),
+    description: String((payload && payload.description) || ''),
+    onProgress: (progress) => send('domainpacks:progress', progress),
+  });
+});
+ipcMain.handle('domainpacks:install', async (_e, payload) => {
+  const mode = String((payload && payload.mode) || 'pack');
+  const onProgress = (progress) => send('domainpacks:progress', progress);
+  if (mode === 'vanilla') {
+    return core.domainpacks.installVanilla({
+      mcVersion: String((payload && payload.mcVersion) || ''),
+      onProgress,
+    });
+  }
+  return core.domainpacks.installPack({
+    domainId: String((payload && payload.domainId) || ''),
+    packId: String((payload && payload.packId) || ''),
+    serverId: String((payload && payload.serverId) || ''),
+    mcDir: String((payload && payload.mcDir) || ''),
+    instanceId: String((payload && payload.instanceId) || ''),
+    onProgress,
+  });
+});
+ipcMain.handle('domainpacks:tokenStatus', (_e, payload) => ({
+  configured: Boolean(core.domainpacks.publishToken(String((payload && payload.domainId) || ''))),
+}));
+ipcMain.handle('domainpacks:setToken', (_e, payload) => ({
+  configured: core.domainpacks.setPublishToken(
+    String((payload && payload.domainId) || ''),
+    String((payload && payload.token) || '')
+  ),
+}));
+ipcMain.handle('domainpacks:installed', () => {
+  const out = [];
+  for (const inst of core.versions.listInstalled(gameDirs())) {
+    const instanceDir = path.join(inst.dir, 'versions', inst.id);
+    const marker = core.domainpacks.readMarker(instanceDir);
+    if (!marker || !marker.packId) continue;
+    out.push({
+      id: inst.id,
+      dir: inst.dir,
+      mcVersion: inst.mcVersion,
+      loader: inst.loader,
+      isolated: inst.isolated,
+      packId: marker.packId,
+      packName: marker.packName || '',
+      version: Number(marker.version) || 0,
+      minJava: Number(marker.minJava) || 0,
+      policy: marker.policy || '',
+      serverId: marker.serverId || '',
+    });
+  }
+  return out;
+});
 ipcMain.handle('domains:downloadResource', async (_e, payload) => {
   const id = String((payload && payload.domainId) || '');
   const resourceId = String((payload && payload.resourceId) || '');

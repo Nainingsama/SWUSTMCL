@@ -67,6 +67,30 @@ function resolveUrl(value, base) {
   try { return new URL(String(value), base.endsWith('/') ? base : `${base}/`).toString(); } catch { return ''; }
 }
 
+function normalizePack(raw, base) {
+  if (!raw || typeof raw !== 'object' || !raw.id) return null;
+  const instance = raw.instance && typeof raw.instance === 'object' ? raw.instance : {};
+  return {
+    id: String(raw.id),
+    name: String(raw.name || '未命名整合包').slice(0, 80),
+    description: String(raw.description || '').slice(0, 300),
+    icon: resolveUrl(raw.icon, base),
+    serverId: String(raw.serverId || ''),
+    policy: raw.policy === 'required' ? 'required' : 'optional',
+    minJava: Number(raw.minJava) || 0,
+    latestVersion: Number(raw.latestVersion) || 0,
+    fileCount: Number(raw.fileCount) || 0,
+    totalSize: Number(raw.totalSize) || 0,
+    updatedAt: raw.updatedAt || null,
+    instance: {
+      mcVersion: String(instance.mcVersion || ''),
+      loader: String(instance.loader || ''),
+      loaderVersion: String(instance.loaderVersion || ''),
+      javaMajor: Number(instance.javaMajor) || 0,
+    },
+  };
+}
+
 function normalizeServer(raw, base) {
   if (!raw || typeof raw !== 'object') return null;
   const host = String(raw.host || '').trim();
@@ -85,6 +109,7 @@ function normalizeServer(raw, base) {
     maxPlayers: Number(raw.maxPlayers) || 0,
     version: String(raw.version || ''),
     lastSeenAt: raw.lastSeenAt || null,
+    pack: normalizePack(raw.pack, base),
   };
 }
 
@@ -111,6 +136,7 @@ function normalizeManifest(raw, base) {
   if (Number(raw.version) !== 1) throw new Error('域清单协议版本不受支持');
   const servers = (Array.isArray(raw.servers) ? raw.servers : []).map((s) => normalizeServer(s, base)).filter(Boolean);
   const resources = (Array.isArray(raw.resources) ? raw.resources : []).map((r) => normalizeResource(r, base)).filter(Boolean);
+  const packs = (Array.isArray(raw.packs) ? raw.packs : []).map((p) => normalizePack(p, base)).filter(Boolean);
   const auth = raw.auth && typeof raw.auth === 'object' ? raw.auth : {};
   return {
     version: 1,
@@ -135,6 +161,7 @@ function normalizeManifest(raw, base) {
     },
     servers,
     resources,
+    packs,
     updatedAt: raw.updatedAt || null,
   };
 }
@@ -161,6 +188,7 @@ function personalDomain() {
       announcement: { text: '', updatedAt: null },
       servers: [],
       resources: [],
+      packs: [],
       auth: null,
       curseforge: null,
     },
