@@ -1,18 +1,18 @@
 {
-  "version": "1.2.2",
-  "notes": "1.2.2：资源页版本/加载器筛选与实例选择分离、未选实例也能浏览、安装时按版本过滤实例，修复跨目录同名实例装错目录。",
+  "version": "1.2.3",
+  "notes": "1.2.3：修复自动更新换装会移走 userdata/.minecraft 导致数据丢失；更新下载失败时给出可点的镜像下载地址。",
   "assets": [
     {
-      "name": "SWUSTMCL-1.2.2-win-x64.zip",
-      "size": 124696712,
-      "sha256": "0cf9968a3d625fa13f194d356e1827e17b651a74c52d4db6e14a256e71f3228e",
-      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.2/SWUSTMCL-1.2.2-win-x64.zip"
+      "name": "SWUSTMCL-1.2.3-win-x64.zip",
+      "size": 124696924,
+      "sha256": "9fbe785f36f342c95b73f3db2de2e2ed199d07f5d21b13ddadd460d01d662d11",
+      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.3/SWUSTMCL-1.2.3-win-x64.zip"
     },
     {
-      "name": "SWUSTMCL-1.2.2-Setup-x64.exe",
-      "size": 94386964,
-      "sha256": "8fe45542e5c4c0e673148a4e9dc0192732d5acb5493b1006083ed32fc1f892ef",
-      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.2/SWUSTMCL-1.2.2-Setup-x64.exe"
+      "name": "SWUSTMCL-1.2.3-Setup-x64.exe",
+      "size": 94387116,
+      "sha256": "925edad0e9d5c4c1934143628f3348f9257d864e26b85ad5569c43f4c5b5d9a9",
+      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.3/SWUSTMCL-1.2.3-Setup-x64.exe"
     }
   ]
 }

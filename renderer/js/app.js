@@ -167,8 +167,17 @@
                     await window.smcl.installUpdate(r.asset);
                     window.Toast.success('更新包校验完成，即将重启换装…');
                   } catch (e) {
-                    window.Toast.error(e.message.replace(/^Error: /, ''));
+                    const msg = String(e.message || e).replace(/^Error: /, '');
                     modalRef.close(false);
+                    // 下载失败：给出可直接点开的镜像下载地址（老版本客户端无法自更新时的兜底）
+                    const assetUrl = r.asset && r.asset.url;
+                    const mirrored = assetUrl ? 'https://gh-proxy.com/' + assetUrl : (r.htmlUrl || '');
+                    window.Modal.confirm({
+                      title: '更新包下载失败',
+                      message: msg,
+                      detail: '可以手动下载安装包（已套用 GitHub 加速前缀），下载完直接安装/覆盖即可。',
+                      okText: '打开下载页',
+                    }).then((ok) => { if (ok) window.smcl.openUrl(mirrored).catch(() => {}); });
                   }
                 },
               }, '下载并安装')
