@@ -277,13 +277,21 @@ async function versions(source, projectId, q = {}) {
   }
 
   const data = await cfFetch(`/mods/${encodeURIComponent(projectId)}/files`);
+  const parseLoaders = (gvs) => {
+    const out = [];
+    for (const g of gvs || []) {
+      const k = String(g).toLowerCase();
+      if (/^(fabric|forge|neoforge|quilt)$/.test(k) && !out.includes(k)) out.push(k);
+    }
+    return out;
+  };
   let list = (data.data || []).map((f) => ({
     id: String(f.id),
     name: f.displayName || f.fileName,
     versionNumber: f.displayName || f.fileName,
     date: f.fileDate,
     gameVersions: f.gameVersions || [],
-    loaders: /fabric/i.test(f.gameVersions && f.gameVersions.join(',')) ? ['fabric'] : [],
+    loaders: parseLoaders(f.gameVersions),
     files: [{
       url: f.downloadUrl || '',
       filename: f.fileName,
@@ -295,6 +303,11 @@ async function versions(source, projectId, q = {}) {
   }));
   list = list.slice().sort((a, b) => (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0)); // 新版在前
   if (q.gameVersion) list = list.filter((v) => v.gameVersions.includes(q.gameVersion));
+  if (q.loader && (q.type || 'mod') === 'mod') {
+    const want = String(q.loader).toLowerCase();
+    // 没有加载器信息的旧文件保留，避免整页被清空
+    list = list.filter((v) => !v.loaders.length || v.loaders.includes(want));
+  }
   return list.slice(0, 30);
 }
 

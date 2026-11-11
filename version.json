@@ -1,18 +1,18 @@
 {
-  "version": "1.2.1",
-  "notes": "1.2.1：域改为启动器当前环境；域内账号、公告、服务器与资源统一由站点接管；CurseForge 搜索由皮肤站中转，玩家无需填写 Key。",
+  "version": "1.2.2",
+  "notes": "1.2.2：资源页版本/加载器筛选与实例选择分离、未选实例也能浏览、安装时按版本过滤实例，修复跨目录同名实例装错目录。",
   "assets": [
     {
-      "name": "SWUSTMCL-1.2.1-win-x64.zip",
-      "size": 124693790,
-      "sha256": "d88b2c43a5c7404d8349c17d42def77073a26a695e5482e868305c464b81409f",
-      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.1/SWUSTMCL-1.2.1-win-x64.zip"
+      "name": "SWUSTMCL-1.2.2-win-x64.zip",
+      "size": 124696712,
+      "sha256": "0cf9968a3d625fa13f194d356e1827e17b651a74c52d4db6e14a256e71f3228e",
+      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.2/SWUSTMCL-1.2.2-win-x64.zip"
     },
     {
-      "name": "SWUSTMCL-1.2.1-Setup-x64.exe",
-      "size": 94384730,
-      "sha256": "b56e1a60596a81c61c0d1e45d2a96abe360c9f28e0ea2802ea13b1845555c78e",
-      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.1/SWUSTMCL-1.2.1-Setup-x64.exe"
+      "name": "SWUSTMCL-1.2.2-Setup-x64.exe",
+      "size": 94386964,
+      "sha256": "8fe45542e5c4c0e673148a4e9dc0192732d5acb5493b1006083ed32fc1f892ef",
+      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.2/SWUSTMCL-1.2.2-Setup-x64.exe"
     }
   ]
 }

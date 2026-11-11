@@ -6,9 +6,9 @@
 (function () {
   const { h, fmtNum } = window.Dom;
   let rootEl = null;
-  let state = { source: 'modrinth', type: 'mod', query: '', hits: [], total: 0, effectiveGv: '' };
+  let state = { source: 'curseforge', type: 'mod', query: '', hits: [], total: 0, effectiveGv: '' };
   let autoLoaded = false;
-  let filters = { instance: '', gameVersion: '', loader: '' };
+  let filters = { instance: '', instanceDir: '', gameVersion: '', loader: '' };
   let lastDomainId = null;
 
   /** 当前域是否提供 CurseForge 中转（由皮肤站持有 Key）。 */
@@ -72,9 +72,62 @@
       segItem('type', 'resourcepack', '材质包'),
     );
 
+    // 加载器筛选（Forge / NeoForge / Fabric）
+    const LOADERS = [['', '全部'], ['forge', 'Forge'], ['neoforge', 'NeoForge'], ['fabric', 'Fabric'], ['quilt', 'Quilt']];
+    const loaderSeg = h('div.seg', null);
+    const syncLoaderSeg = () => {
+      loaderSeg.querySelectorAll('.seg-item').forEach((btn) => btn.classList.toggle('active', btn.dataset.loader === filters.loader));
+    };
+    for (const [val, label] of LOADERS) {
+      loaderSeg.append(h('button.seg-item', {
+        dataset: { loader: val },
+        onclick: (e) => {
+          filters.loader = val;
+          // 手动改加载器 = 脱离实例，改为自定义筛选
+          filters.instance = '';
+          filters.instanceDir = '';
+          if (instanceSel) instanceSel.value = '';
+          loaderSeg.querySelectorAll('.seg-item').forEach((x) => x.classList.toggle('active', x === e.currentTarget));
+          page = 1;
+          updateHint();
+          doSearch();
+        },
+      }, label));
+    }
+
     filters.instance = filters.instance || (window.Store.get('installed') || [])[0]?.id || '';
-    const instanceSel = h('select.select', { style: { maxWidth: '220px' }, onchange: (e) => updateFilters(e) });
+    const instanceSel = h('select.select#resInstance', {
+      style: { maxWidth: '340px', minWidth: '200px', fontSize: '13px', fontWeight: '600', color: 'var(--text)' },
+      onchange: () => {
+        updateFilters();
+        // 选实例：版本与加载器都跟随该实例
+        if (filters.instance) {
+          ensureVersionOption(versionSel, filters.gameVersion);
+          versionSel.value = filters.gameVersion || '';
+          syncLoaderSeg();
+        }
+        page = 1;
+        doSearch();
+      },
+    });
     fillInstances(instanceSel);
+
+    // 版本选择：与实例选择互斥；加载器可与版本自由组合
+    const versionSel = h('select.select#resVersion', {
+      style: { maxWidth: '118px', minWidth: '96px', fontSize: '13px', fontWeight: '600', color: 'var(--text)' },
+      onchange: () => {
+        filters.instance = '';
+        filters.instanceDir = '';
+        instanceSel.value = '';
+        filters.gameVersion = versionSel.value;
+        page = 1;
+        updateHint();
+        doSearch();
+      },
+    });
+    fillVersions(versionSel);
+    if (filters.gameVersion) versionSel.value = filters.gameVersion;
+
     const cf = cfDomain();
 
     root.append(
@@ -82,12 +135,22 @@
         h('span.hint', null, cf
           ? (cf.configured ? 'Modrinth 全功能 · CurseForge 由当前域提供' : 'Modrinth 全功能 · 当前域未配置 CurseForge')
           : 'Modrinth 全功能 · CurseForge 需在设置里填写 API Key')),
-      h('div.res-toolbar', null, search, sourceSeg, typeSeg, instanceSel,
+      h('div.res-toolbar', null, search, sourceSeg, typeSeg,
         h('span.spacer'),
         h('div.seg', null,
           h('button.seg-item' + (viewMode === 'grid' ? '.active' : ''), { title: '网格视图', onclick: (e) => { viewMode = 'grid'; localStorage.setItem('swustmcl.resView', viewMode); syncViewSeg(e.currentTarget.parentElement); drawHits(); } }, iconSvg('grid', 15)),
           h('button.seg-item' + (viewMode === 'list' ? '.active' : ''), { title: '列表视图', onclick: (e) => { viewMode = 'list'; localStorage.setItem('swustmcl.resView', viewMode); syncViewSeg(e.currentTarget.parentElement); drawHits(); } }, iconSvg('list', 15)),
         ),
+      ),
+      h('div.res-ver-group', null,
+        h('span.field-hint', { style: { whiteSpace: 'nowrap' } }, '版本选择'),
+        versionSel,
+        loaderSeg,
+      ),
+      h('div.res-instance-row', null,
+        h('span.field-hint', { style: { whiteSpace: 'nowrap' } }, '实例选择'),
+        instanceSel,
+        h('span.spacer'),
       ),
       h('div.faint.mb-8#resFilterHint'),
       h('div.res-grid#resGrid', null, h('div.empty', { style: { gridColumn: '1/-1' } }, h('div.empty-icon', null, '🔍'), '输入关键词开始搜索')),
@@ -105,6 +168,7 @@
     }
 
     updateFilters();
+    syncLoaderSeg();
     if (state.hits.length) drawHits();
     // 默认加载热门内容（空关键词按下载量排序）
     else if (!autoLoaded) {
@@ -113,30 +177,66 @@
     }
   }
 
+  /** 版本下拉：已装实例涉及的版本 + 当前筛选值，降序去重 */
+  function fillVersions(sel) {
+    window.Dom.clear(sel);
+    const list = window.Store.get('installed') || [];
+    const set = new Set();
+    for (const v of list) if (v.mcVersion) set.add(String(v.mcVersion));
+    if (filters.gameVersion) set.add(String(filters.gameVersion));
+    const versions = [...set].sort((a, b) => b.localeCompare(a, 'zh-CN', { numeric: true }));
+    sel.append(h('option', { value: '' }, '全部版本'));
+    for (const v of versions) sel.append(h('option', { value: v }, v));
+  }
+
+  function ensureVersionOption(sel, ver) {
+    if (!ver) return;
+    if ([...sel.options].some((o) => o.value === ver)) return;
+    sel.append(h('option', { value: ver }, ver));
+  }
+
   function fillInstances(sel) {
     window.Dom.clear(sel);
     const list = window.Store.get('installed') || [];
     if (!list.length) sel.append(h('option', { value: '' }, '（暂无实例）'));
     for (const v of list) {
-      sel.append(h('option', { value: v.id, dataset: { mc: v.mcVersion || '', loader: v.loader } },
-        `${v.id} · ${v.mcVersion || v.type}`));
+      sel.append(h('option', { value: v.id, dataset: { dir: v.dir || '', mc: v.mcVersion || '', loader: v.loader } },
+        (v.mcVersion && v.mcVersion !== v.id ? `${v.id} · ${v.mcVersion}` : v.id)));
     }
   }
 
   function updateFilters() {
-    const sel = rootEl.querySelector('select');
-    if (!sel) return;
-    const opt = sel.selectedOptions[0];
-    filters.instance = sel.value;
-    filters.gameVersion = opt ? opt.dataset.mc : '';
-    const ldr = opt ? (opt.dataset.loader || '') : '';
-    filters.loader = ldr === '原版' ? '' : ldr; // 原版实例不做加载器过滤
-    const hint = rootEl.querySelector('#resFilterHint');
-    if (hint) {
-      hint.textContent = filters.instance
-        ? `安装到实例「${filters.instance}」 · 按 ${filters.gameVersion || '任意版本'}${filters.loader && filters.loader !== '原版' ? ` · ${filters.loader}` : ''} 筛选`
-        : '没有可用实例 —— 安装一个游戏后即可按版本筛选';
+    const inst = rootEl.querySelector('#resInstance');
+    const opt = inst && inst.selectedOptions[0];
+    filters.instance = inst ? inst.value : '';
+    filters.instanceDir = filters.instance && opt ? (opt.dataset.dir || '') : '';
+    if (filters.instance && opt) {
+      // 实例模式：版本 + 加载器都取自实例
+      filters.gameVersion = opt.dataset.mc || '';
+      const ldr = opt.dataset.loader || '';
+      filters.loader = ldr === '原版' ? '' : String(ldr).toLowerCase();
+    } else {
+      // 自定义模式：版本来自下拉，加载器仍可自由选择
+      const ver = rootEl.querySelector('#resVersion');
+      filters.gameVersion = ver ? ver.value : '';
     }
+    updateHint();
+  }
+
+  function updateHint() {
+    const hint = rootEl.querySelector('#resFilterHint');
+    if (!hint) return;
+    const LBL = { forge: 'Forge', neoforge: 'NeoForge', fabric: 'Fabric', quilt: 'Quilt' };
+    const ldr = filters.loader && filters.loader !== '原版' ? ' · ' + (LBL[filters.loader] || filters.loader) : '';
+    if (filters.instance) {
+      hint.textContent = '安装到实例「' + filters.instance + '」 · 按 ' + (filters.gameVersion || '任意版本') + ldr + ' 筛选';
+      return;
+    }
+    if (!filters.gameVersion && !filters.loader) {
+      hint.textContent = '未限定版本与加载器：显示全部热门内容（可用上方「版本选择 / 加载器」缩小范围）';
+      return;
+    }
+    hint.textContent = '按 ' + (filters.gameVersion || '任意版本') + ldr + ' 筛选（选择实例可自动对齐该实例的版本与加载器）';
   }
 
   let viewMode = localStorage.getItem('swustmcl.resView') || 'grid';
@@ -162,13 +262,14 @@
    * - 空关键词不带版本过滤；有关键词且该版本 0 适配时自动去版本过滤重试
    */
   async function doSearch(pageNum = 1) {
+    updateHint();
     const mySeq = ++searchSeq;
     searching = true;
     page = Math.max(1, pageNum);
     const grid = rootEl.querySelector('#resGrid');
     if (!grid) { searching = false; return; }
     window.Dom.clear(grid).append(
-      h('div.empty', { style: { gridColumn: '1/-1' } }, h('span.spinner', { style: { borderTopColor: 'var(--accent)', width: '24px', height: '24px', border: '2px solid rgba(255,255,255,0.2)' } }), '搜索中…'),
+      h('div.res-loading', { style: { gridColumn: '1/-1' } }, h('span.spinner'), h('span', null, '搜索中…')),
     );
     try {
       const offset = (page - 1) * PAGE_SIZE;
@@ -352,11 +453,51 @@
     );
   }
 
+  /** 安装前选择目标实例（未选实例时弹出） */
+  function pickInstance(file) {
+    return new Promise((resolve) => {
+      const all = window.Store.get('installed') || [];
+      if (!all.length) {
+        window.Toast.warn('还没有可用的游戏实例，请先到「下载游戏」安装一个版本');
+        resolve(null);
+        return;
+      }
+      const gvs = (file && file.gameVersions) || [];
+      const lds = ((file && file.loaders) || []).map((x) => String(x).toLowerCase());
+      const norm = (x) => String(x || '').toLowerCase();
+      const list = all.filter((v) => {
+        const gvOk = !gvs.length || gvs.includes(v.mcVersion);
+        const instLoader = norm(v.loader);
+        const ldOk = !lds.length || lds.includes(instLoader)
+          || (instLoader === '原版' && lds.includes('minecraft'));
+        return gvOk && ldOk;
+      });
+      // 没有完全匹配的实例时不硬拦：回退到全部实例并标注风险
+      const fallback = !list.length;
+      const pool = fallback ? all.slice() : list;
+      if (!pool.length) { resolve(null); return; }
+      let m;
+      m = window.Modal.open({
+        title: '选择安装到哪个实例',
+        body: (el) => {
+          el.append(h('div.muted', { style: { marginBottom: '8px' } },
+            fallback
+              ? '没有与该文件版本/加载器完全匹配的实例，以下实例可能不兼容：'
+              : '仅列出与「' + ((gvs[0] || '任意版本') + (lds.length ? ' · ' + lds.join('/') : '')) + '」匹配的实例：'));
+          for (const v of pool) {
+            el.append(h('button.menu-item', {
+              style: { width: '100%', justifyContent: 'flex-start' },
+              onclick: () => m.close({ id: v.id, dir: v.dir || '' }),
+            }, v.id + (v.loader && v.loader !== '原版' ? ' · ' + v.loader : '') + (v.mcVersion ? ' · ' + v.mcVersion : '')));
+          }
+        },
+        footer: [h('button.btn.pressable', { onclick: () => m.close(null) }, '取消')],
+      });
+      m.then((pick) => resolve(pick || null));
+    });
+  }
+
   async function showVersions(hit, sourceOverride) {
-    if (!filters.instance) {
-      window.Toast.warn('请先安装一个游戏实例');
-      return;
-    }
     const modal = window.Modal.open({ title: hit.title, size: 'lg' });
     const body = modal.bodyEl;
     body.append(h('div.skeleton', { style: { height: '160px' } }));
@@ -376,6 +517,10 @@
       if (degradedVer) {
         body.append(h('div.banner.banner-warn', { style: { marginBottom: '10px' } },
           `当前实例版本（${filters.gameVersion}）没有适配文件，已显示全部版本`));
+      }
+      if (!filters.instance) {
+        body.append(h('div.banner', { style: { marginBottom: '10px' } },
+          '未选择实例：可以先浏览所有版本，点击「安装」时会让你选择要装到哪个实例。'));
       }
       const listEl = h('div.col', { style: { gap: '8px' } });
       for (const v of list.slice(0, 12)) {
@@ -413,9 +558,23 @@
               btn.disabled = true;
               btn.textContent = '安装中…';
               try {
+                let instId = filters.instance;
+                let instDir = filters.instanceDir;
+                if (!instId) {
+                  const pick = await pickInstance(v);
+                  if (!pick) { btn.disabled = false; btn.textContent = '安装'; return; }
+                  instId = pick.id;
+                  instDir = pick.dir;
+                  filters.instance = instId;
+                  filters.instanceDir = instDir;
+                  const selEl = rootEl.querySelector('#resInstance');
+                  if (selEl) { selEl.value = instId; updateFilters(); }
+                }
+                const target = (window.Store.get('installed') || []).find((x) => x.id === instId && (!instDir || x.dir === instDir))
+                  || (window.Store.get('installed') || []).find((x) => x.id === instId);
                 const r = await window.smcl.contentInstall({
-                  source: sourceOverride || state.source, projectId: hit.id, versionId: v.id, instance: filters.instance,
-                  dir: (window.Store.get('installed') || []).find((x) => x.id === filters.instance)?.dir, type: state.type,
+                  source: sourceOverride || state.source, projectId: hit.id, versionId: v.id, instance: instId,
+                  dir: (target && target.dir) || instDir, type: state.type,
                 });
                 window.Toast.success(`已安装 ${r.files.map((f) => f.filename).join('、')}${r.files.length > 1 ? '（含依赖）' : ''}`);
                 modal.close(true);
@@ -437,6 +596,27 @@
   window.Pages = window.Pages || {};
   window.Pages.content = {
     render,
-    onShow() { updateFilters(); },
+    onShow() {
+      const before = filters.instance;
+      // 跟随启动页当前实例（在版本页切换后回来）
+      const cur = window.Store.get('homeVersionId') || '';
+      const list = window.Store.get('installed') || [];
+      if (cur && list.some((v) => v.id === cur) && rootEl) {
+        const sel = rootEl.querySelector('.res-toolbar select');
+        if (sel) sel.value = cur;
+      }
+      updateFilters();
+      if (rootEl) {
+        const sel = rootEl.querySelector('#resInstance');
+        if (sel) sel.value = filters.instance || sel.value;
+        const ver = rootEl.querySelector('#resVersion');
+        if (ver && filters.gameVersion) { if (![...ver.options].some(o=>o.value===filters.gameVersion)) ver.append(new Option(filters.gameVersion, filters.gameVersion)); ver.value = filters.gameVersion; }
+      }
+      // 实例变了（在版本页切换后回来）→ 自动按新实例重新搜索
+      if (before !== filters.instance && filters.instance) {
+        page = 1;
+        doSearch();
+      }
+    },
   };
 })();

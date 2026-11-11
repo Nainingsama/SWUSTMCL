@@ -261,7 +261,7 @@ function loadVersionJson(mcDir, id, depth = 0) {
   safe.assertVersionId(id);
   const file = safe.safeJoin(path.join(mcDir, 'versions'), id, `${id}.json`);
   const json = readJson(file);
-  if (!json) throw new Error(`未找到版本 ${id} 的 JSON，可能尚未安装`);
+  if (!json) throw new Error(`未找到版本 ${id} 的 JSON（${path.join(mcDir, 'versions', id)}），可能尚未安装或目录不正确`);
   if (!json.inheritsFrom) return { ...json, id };
   const parent = loadVersionJson(mcDir, json.inheritsFrom, depth + 1);
   return mergeVersion(parent, { ...json, id });
