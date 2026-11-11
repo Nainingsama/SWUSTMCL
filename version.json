@@ -1,18 +1,12 @@
 {
-  "version": "1.2.3",
-  "notes": "1.2.3：修复自动更新换装会移走 userdata/.minecraft 导致数据丢失；更新下载失败时给出可点的镜像下载地址。",
+  "version": "1.2.4",
+  "notes": "1.2.4：新增服务器整合包发布与进服策略；皮肤站管理员可从启动器发布隔离实例，支持必装/原版增强、最低 Java 与增量上传。",
   "assets": [
     {
-      "name": "SWUSTMCL-1.2.3-win-x64.zip",
-      "size": 124696924,
-      "sha256": "9fbe785f36f342c95b73f3db2de2e2ed199d07f5d21b13ddadd460d01d662d11",
-      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.3/SWUSTMCL-1.2.3-win-x64.zip"
-    },
-    {
-      "name": "SWUSTMCL-1.2.3-Setup-x64.exe",
-      "size": 94387116,
-      "sha256": "925edad0e9d5c4c1934143628f3348f9257d864e26b85ad5569c43f4c5b5d9a9",
-      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.3/SWUSTMCL-1.2.3-Setup-x64.exe"
+      "name": "SWUSTMCL-1.2.4-win-x64.zip",
+      "size": 124653570,
+      "sha256": "c3ac6065d45e6afc3601b803027e683380e5f3403e6564f6b221fb6a3c2a0a4a",
+      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.4/SWUSTMCL-1.2.4-win-x64.zip"
     }
   ]
 }

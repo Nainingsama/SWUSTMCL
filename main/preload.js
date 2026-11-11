@@ -135,6 +135,15 @@ contextBridge.exposeInMainWorld('smcl', {
   onDomainError: (cb) => on('domains:error', cb),
   onDomainResourceProgress: (cb) => on('domains:resourceProgress', cb),
 
+  // 域整合包发布 / 安装
+  domainPackScan: (dir, id) => ipcRenderer.invoke('domainpacks:scan', { dir, id }),
+  domainPackPublish: (payload) => ipcRenderer.invoke('domainpacks:publish', payload),
+  domainPackInstall: (payload) => ipcRenderer.invoke('domainpacks:install', payload),
+  domainPackTokenStatus: (domainId) => ipcRenderer.invoke('domainpacks:tokenStatus', { domainId }),
+  domainPackSetToken: (domainId, token) => ipcRenderer.invoke('domainpacks:setToken', { domainId, token }),
+  domainPackInstalled: () => ipcRenderer.invoke('domainpacks:installed'),
+  onDomainPackProgress: (cb) => on('domainpacks:progress', cb),
+
   historyList: () => ipcRenderer.invoke('history:list'),
   instanceLog: (id, lines) => ipcRenderer.invoke('log:instance', { id, lines }),
   instanceLogClear: (id) => ipcRenderer.invoke('log:instance:clear', { id }),
