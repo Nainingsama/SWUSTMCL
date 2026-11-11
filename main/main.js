@@ -1118,9 +1118,13 @@ ipcMain.handle('loader:install', async (_e, payload) => {
 // ---------- 整合包 ----------
 ipcMain.handle('modpack:pick', async () => {
   const r = await dialog.showOpenDialog(win, {
-    title: '选择整合包 zip',
+    title: '选择整合包（.mrpack / .zip）',
     properties: ['openFile'],
-    filters: [{ name: '整合包', extensions: ['zip'] }],
+    filters: [
+      { name: '整合包', extensions: ['mrpack', 'zip'] },
+      { name: 'Modrinth 整合包', extensions: ['mrpack'] },
+      { name: '压缩包', extensions: ['zip'] },
+    ],
   });
   if (r.canceled || !r.filePaths.length) return null;
   return r.filePaths[0];

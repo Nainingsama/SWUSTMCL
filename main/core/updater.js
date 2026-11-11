@@ -187,7 +187,7 @@ async function install(asset, onProgress) {
     }
   };
 
-  async function fetchWithWatchdog(url, dest, { stallMs = 12000, totalMs = 600000 } = {}) {
+  async function fetchWithWatchdog(url, dest, { stallMs = 15000, totalMs = 45 * 60 * 1000 } = {}) {
     const ac = new AbortController();
     let lastTick = Date.now();
     const killer = setTimeout(() => ac.abort(), totalMs);

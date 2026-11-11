@@ -6,6 +6,73 @@
   const { h } = window.Dom;
   const Pages = window.Pages;
 
+  // ------------------------------------------------------------ 更新任务（单例 + 持久进度卡）
+  let updateJob = null;
+
+  function setUpdateProgress(percent, message) {
+    if (!updateJob) return;
+    if (percent != null) updateJob.percent = Math.max(0, Math.min(100, percent));
+    if (message != null) updateJob.message = message;
+    const bar = document.getElementById('updBar') || (updateJob.card && updateJob.card.querySelector('.progress-bar'));
+    const msg = document.getElementById('updMsg') || (updateJob.card && updateJob.card.querySelector('.upd-card-msg'));
+    const pct = document.getElementById('updPct') || (updateJob.card && updateJob.card.querySelector('.upd-card-pct'));
+    if (bar) bar.style.width = updateJob.percent + '%';
+    if (msg) msg.textContent = updateJob.message || '';
+    if (pct) pct.textContent = Math.round(updateJob.percent) + '%';
+  }
+
+  function ensureUpdateCard() {
+    if (updateJob.card && document.body.contains(updateJob.card)) return updateJob.card;
+    const close = h('button.iconbtn', {
+      title: '收起（后台继续下载）',
+      style: { width: '24px', height: '24px' },
+      onclick: (e) => { e.stopPropagation(); updateJob.card.remove(); },
+    }, '×');
+    const card = h('div.task-card.update-card', {
+      onclick: () => { if (updateJob) window.app.showUpdateProgress(); },
+    },
+      h('div.row', { style: { justifyContent: 'space-between' } },
+        h('div', { style: { fontWeight: '650', fontSize: '13px' } }, '启动器更新 ' + updateJob.version),
+        close,
+      ),
+      h('div.progress', { style: { marginTop: '8px' } }, h('div.progress-bar', { style: { width: updateJob.percent + '%' } })),
+      h('div.progress-meta', null,
+        h('span.upd-card-msg', null, updateJob.message || '准备下载…'),
+        h('span.upd-card-pct', null, Math.round(updateJob.percent) + '%'),
+      ),
+    );
+    updateJob.card = card;
+    document.body.append(card);
+    return card;
+  }
+
+  async function startUpdate(r) {
+    if (updateJob && updateJob.running) {
+      window.app.showUpdateProgress();
+      return;
+    }
+    updateJob = { running: true, version: r.version, asset: r.asset, percent: 0, message: '准备下载…', card: null };
+    ensureUpdateCard();
+    try {
+      await window.smcl.installUpdate(r.asset);
+      updateJob.running = false;
+      setUpdateProgress(100, '校验完成，即将重启换装…');
+      window.Toast.success('更新包校验完成，即将重启换装…');
+    } catch (e) {
+      updateJob.running = false;
+      const msg = String(e.message || e).replace(/^Error: /, '');
+      if (updateJob.card) updateJob.card.remove();
+      const assetUrl = r.asset && r.asset.url;
+      const mirrored = assetUrl ? 'https://gh-proxy.com/' + assetUrl : (r.htmlUrl || '');
+      window.Modal.confirm({
+        title: '更新包下载失败',
+        message: msg,
+        detail: '可以手动下载安装包（已套用 GitHub 加速前缀），下载完直接安装/覆盖即可。',
+        okText: '打开下载页',
+      }).then((ok) => { if (ok) window.smcl.openUrl(mirrored).catch(() => {}); });
+    }
+  }
+
   const VIEW_TITLES = {
     home: '首页', versions: '版本管理', download: '下载游戏',
     account: '账户', downloads: '记录', servers: '服务器',
@@ -137,7 +204,25 @@
       this.showUpdateModal(info);
     },
 
+    showUpdateProgress() {
+      const modalRef = window.Modal.open({
+        title: '启动器更新 ' + (updateJob ? updateJob.version : ''),
+        body: (el) => el.append(
+          h('div.col', { style: { gap: '10px', padding: '16px 0' } },
+            h('div.progress', null, h('div.progress-bar#updBar', { style: { width: (updateJob ? updateJob.percent : 0) + '%' } })),
+            h('div.progress-meta', null,
+              h('span#updMsg', null, (updateJob && updateJob.message) || '准备下载…'),
+              h('span#updPct', null, Math.round(updateJob ? updateJob.percent : 0) + '%'),
+            ),
+          ),
+        ),
+        footer: [h('button.btn.pressable', { onclick: () => modalRef.close(false) }, '后台继续')],
+      });
+      setTimeout(() => { if (updateJob) setUpdateProgress(updateJob.percent, updateJob.message); }, 30);
+    },
+
     showUpdateModal(r) {
+      if (updateJob && updateJob.running) { this.showUpdateProgress(); return; }
       let modalRef = null;
       modalRef = window.Modal.open({
         title: `启动器更新 ${r.version}`,
@@ -455,12 +540,8 @@
       Pages.home.onShow && Pages.home.onShow();
     });
     window.smcl.onUpdateProgress((p) => {
-      const bar = document.getElementById('updBar');
-      const msg = document.getElementById('updMsg');
-      const pct = document.getElementById('updPct');
-      if (bar) bar.style.width = `${p.percent || 0}%`;
-      if (msg) msg.textContent = p.message || '';
-      if (pct) pct.textContent = p.percent != null ? `${p.percent}%` : '';
+      if (!updateJob) return;
+      setUpdateProgress(p.percent != null ? p.percent : null, p.message || '');
     });
     window.smcl.onUpdateChangelog(({ version, notes }) => {
       let modalRef = null;
@@ -536,7 +617,7 @@
       hideDropTip();
       // 拖入本地文件：整合包 zip 直接识别并询问是否安装
       const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
-      const zip = files.find((f) => /\.zip$/i.test(f.name || ''));
+      const zip = files.find((f) => /\.(zip|mrpack)$/i.test(f.name || ''));
       if (zip) {
         const p = window.smcl.pathForFile ? window.smcl.pathForFile(zip) : zip.path;
         if (!p) {

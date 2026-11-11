@@ -16,7 +16,7 @@
     },
       h('div.dz-icon', null, '📦'),
       h('div', { style: { fontSize: '14px', fontWeight: '600' } }, '拖入或点击选择整合包 zip'),
-      h('div.faint', null, '支持 Modrinth（modrinth.index.json）/ CurseForge（manifest.json）/ PCL·HMCL 导出的裸目录包'),
+      h('div.faint', null, '支持 Modrinth（.mrpack）/ CurseForge / PCL·HMCL 导出的 zip 包'),
     );
     drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('dragover'); });
     drop.addEventListener('dragleave', () => drop.classList.remove('dragover'));
@@ -24,8 +24,8 @@
       e.preventDefault();
       drop.classList.remove('dragover');
       const f = e.dataTransfer.files && e.dataTransfer.files[0];
-      if (f && f.name.toLowerCase().endsWith('.zip')) pickPath(window.smcl.pathForFile ? window.smcl.pathForFile(f) : f.path);
-      else window.Toast.warn('请拖入 zip 整合包');
+      if (f && /\.(zip|mrpack)$/i.test(f.name)) pickPath(window.smcl.pathForFile ? window.smcl.pathForFile(f) : f.path);
+      else window.Toast.warn('请拖入 .mrpack 或 .zip 整合包');
     });
 
     const progWrap = h('div', { style: { display: 'none', flexDirection: 'column', gap: '8px', marginTop: '14px' } },
