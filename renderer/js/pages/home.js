@@ -165,7 +165,81 @@
   const maxOf = (id) => ({ ...W_MAX, ...(W_MAX_MAP[id] || {}) });
   const clampNum = (v, min, max) => Math.min(max, Math.max(min, v));
 
+  function domainHomeLayout() {
+    const domain = window.DomainContext && window.DomainContext.active ? window.DomainContext.active() : null;
+    if (!domain || domain.personal) return null;
+    const layout = domain.manifest && domain.manifest.homeLayout;
+    return layout && layout.cards && Object.keys(layout.cards).length ? layout : null;
+  }
+
+  function applyDomainLayout(canvas, layout) {
+    if (!canvas || !layout) return;
+    const width = Math.max(640, canvas.clientWidth || 900);
+    const cols = Math.max(1, Number(layout.columns) || 12);
+    const gap = Math.max(0, Number(layout.gap) || 16);
+    const rowHeight = Math.max(1, Number(layout.rowHeight) || 40);
+    const cell = Math.max(1, (width - gap * (cols - 1)) / cols);
+    for (const holder of canvas.querySelectorAll('.home-widget')) {
+      const cfg = (layout.cards || {})[holder.dataset.widget];
+      const visible = cfg && cfg.visible !== false && holder.dataset.gameHidden !== '1';
+      holder.style.display = visible ? 'flex' : 'none';
+      if (!visible) continue;
+      const col = Math.max(1, Math.min(cols, Number(cfg.col) || 1));
+      const span = Math.max(1, Math.min(cols - col + 1, Number(cfg.width) || 1));
+      const row = Math.max(1, Number(cfg.row) || 1);
+      const rows = Math.max(1, Number(cfg.height) || 1);
+      holder.style.left = ((col - 1) * (cell + gap)) + 'px';
+      holder.style.top = ((row - 1) * (rowHeight + gap)) + 'px';
+      holder.style.width = (span * cell + (span - 1) * gap) + 'px';
+      holder.style.height = (rows * rowHeight + (rows - 1) * gap) + 'px';
+    }
+    updateCanvasHeight(canvas);
+  }
+
+  function mountDomainWidgets(canvas, widgets, layout) {
+    const holders = {};
+    canvas.__domainLayout = layout;
+    for (const w of widgets) {
+      const card = w.card;
+      card.classList.add('widget-card');
+      let head = card.querySelector('.card-head');
+      if (!head) {
+        head = h('div.card-head');
+        const body = card.querySelector('.card-body');
+        const innerTitle = body && body.querySelector(':scope > .section-title');
+        if (innerTitle) innerTitle.remove();
+        card.insertBefore(head, card.firstChild);
+        head.append(h('div.card-title', null, w.title));
+      }
+      head.classList.add('widget-head');
+      head.append(h('button.iconbtn', { title: '刷新', onclick: (e) => { e.stopPropagation(); if (w.refresh) w.refresh(); } }, '↻'));
+      const holder = h('div.home-widget', { style: { display: 'none' } });
+      holder.dataset.widget = w.id;
+      holder.dataset.domainLocked = '1';
+      holder.dataset.gameHidden = w.hidden ? '1' : '0';
+      card.title = '卡片布局由域管理员统一管理';
+      holder.append(card);
+      canvas.append(holder);
+      holders[w.id] = holder;
+    }
+    applyDomainLayout(canvas, layout);
+    if (!home._resizeBound) {
+      home._resizeBound = true;
+      let rt = null;
+      window.addEventListener('resize', () => {
+        if (rt) clearTimeout(rt);
+        rt = setTimeout(() => {
+          const c = document.querySelector('.home-canvas');
+          if (c) applyResponsiveLayout(c);
+        }, 160);
+      });
+    }
+    return holders;
+  }
+
   function mountWidgets(canvas, widgets) {
+    const domainLayout = domainHomeLayout();
+    if (domainLayout) return mountDomainWidgets(canvas, widgets, domainLayout);
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(HOME_WIDGET_KEY) || '{}') || {}; } catch {}
     const width = Math.max(640, canvas.clientWidth || 900);
@@ -399,6 +473,10 @@
   /** 窗口尺寸变化：横向按比例重排（拖动过的布局也不会跑偏/留大空白） */
   function applyResponsiveLayout(canvas) {
     if (!canvas) return;
+    if (canvas.__domainLayout) {
+      applyDomainLayout(canvas, canvas.__domainLayout);
+      return;
+    }
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(HOME_WIDGET_KEY) || '{}') || {}; } catch {}
     const cw = Math.max(640, canvas.clientWidth || 900);
@@ -512,7 +590,7 @@
           metaEl,
           h('div.faint.srv-bind', null,
             srv.domain
-              ? '来自域 · 由管理员维护'
+              ? '来自域 · 由管理员维护' + ((srv.altHosts || []).length ? ' · 次 IP ' + srv.altHosts.length + ' 个' : '')
               : srv.instanceId
                 ? (installed.some((v) => v.id === srv.instanceId) ? '已安装「' + srv.instanceId + '」' : '绑定实例「' + srv.instanceId + '」（未安装）')
                 : '未绑定整合包'),
@@ -521,7 +599,28 @@
           h('button.btn.btn-ghost.btn-xs', { title: '复制服务器地址', onclick: async () => {
             try { await window.smcl.clipboardWrite(srv.host + ':' + srv.port); window.Toast.success('已复制 ' + srv.host + ':' + srv.port); } catch (e) { window.Toast.error(e.message); }
           } }, '⧉'),
-          h('button.btn.btn-primary.btn-xs.pressable', { title: '启动并加入服务器', onclick: () => joinServer(srv) }, '启动'),
+          srv.pack ? (() => {
+            const btn = h('button.btn.btn-ghost.btn-xs', {
+              title: '下载/启动整合包（不自动进服）',
+              onclick: async () => {
+                btn.disabled = true;
+                const upToDate = btn.dataset.upToDate === '1';
+                if (upToDate) await window.DomainPackJoin.launchOnly(srv);
+                else await window.DomainPackJoin.download(srv);
+                btn.disabled = false;
+              },
+            }, '下载');
+            window.DomainPackJoin.state(srv).then((st) => {
+              btn.dataset.upToDate = st.upToDate ? '1' : '0';
+              btn.textContent = st.upToDate ? '启动' : '下载';
+              btn.title = st.upToDate ? '启动游戏（不自动进服）' : '下载/更新整合包';
+            }).catch(() => {});
+            return btn;
+          })() : null,
+          h('button.btn.btn-primary.btn-xs.pressable', {
+            title: srv.pack ? '启动并进入服务器' : '进入服务器',
+            onclick: () => joinServer(srv),
+          }, '进服'),
           srv.domain ? null : h('button.btn.btn-ghost.btn-xs', { title: '移除这个服务器', style: { color: '#ff6369' }, onclick: () => editServer(srv) }, icon('trash', 14)),
         ),
       );
@@ -548,13 +647,9 @@
     }
     if (srv.pack && window.DomainPackJoin) {
       try {
-        const prepared = await window.DomainPackJoin.prepareJoin(srv);
-        if (!prepared) return;
-        await window.smcl.launch(prepared.id, prepared.dir, { server: { host: srv.host, port: srv.port } });
+        await window.DomainPackJoin.join(srv);
         window.Store.set({ gameRunning: true });
-      } catch (e) {
-        window.Toast.error(String(e.message || e).replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '').replace(/^Error:\s*/, ''));
-      }
+      } catch {}
       return;
     }
     const installed = window.Store.get('installed') || [];
@@ -565,12 +660,12 @@
       inst = picked;
     }
     try {
-      window.Toast.info('正在启动 ' + inst.id + ' 并加入 ' + srv.host + ':' + srv.port + '…');
-      await window.smcl.launch(inst.id, inst.dir, { server: { host: srv.host, port: srv.port } });
+      await window.LaunchFeedback.run(
+        () => window.smcl.launch(inst.id, inst.dir, { server: { host: srv.host, port: srv.port } }),
+        { title: '正在进入服务器…', success: '游戏已启动，正在进入服务器' }
+      );
       window.Store.set({ gameRunning: true });
-    } catch (e) {
-      window.Toast.error(String(e.message || e).replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '').replace(/^Error:\s*/, ''));
-    }
+    } catch {}
   }
 
   function pickInstanceForServer(srv, installed) {
@@ -655,6 +750,11 @@
 
     async function draw() {
       try { sessions = await window.smcl.historyList(); } catch { sessions = []; }
+      let sitePlaytime = null;
+      const activeDomain = window.DomainContext && window.DomainContext.active ? window.DomainContext.active() : null;
+      if (activeDomain && !activeDomain.personal) {
+        try { sitePlaytime = await window.smcl.domainPlaytime(activeDomain.id); } catch { sitePlaytime = null; }
+      }
       const dayMap = new Map();
       for (const s of sessions) {
         const key = fmtDay(new Date(s.start));
@@ -713,21 +813,40 @@
         const m = Math.round(ms / 60000);
         return Math.floor(m / 60) + ' 小时 ' + (m % 60) + ' 分';
       };
-      body.append(
+      const siteTotal = Number(sitePlaytime && sitePlaytime.totalMillis) || 0;
+      const useSite = siteTotal > 0;
+      const siteActive = Number(sitePlaytime && sitePlaytime.activeMillis) || 0;
+      const siteAfk = Math.min(Number(sitePlaytime && sitePlaytime.afkMillis) || 0, siteTotal);
+      body.append(...[
         head,
         grid,
         h('div.cal-stats', null,
-          h('div.cal-stat', null, h('div.faint', null, '今天'), h('div.cal-stat-val', null, fmtDur(todayMs))),
-          h('div.cal-stat', null, h('div.faint', null, '本周'), h('div.cal-stat-val', null, fmtDur(weekMs))),
-          h('div.cal-stat', null, h('div.faint', null, '累计'), h('div.cal-stat-val', null, fmtDur(totalMs)), h('div.faint', null, '玩了 ' + dayMap.size + ' 天')),
+          useSite
+            ? [
+              h('div.cal-stat', null, h('div.faint', null, '总在线'), h('div.cal-stat-val', null, fmtDur(siteTotal))),
+              h('div.cal-stat', null, h('div.faint', null, '活跃'), h('div.cal-stat-val', null, fmtDur(siteActive))),
+              h('div.cal-stat', null, h('div.faint', null, '挂机'), h('div.cal-stat-val', null, fmtDur(siteAfk))),
+            ]
+            : [
+              h('div.cal-stat', null, h('div.faint', null, '今天'), h('div.cal-stat-val', null, fmtDur(todayMs))),
+              h('div.cal-stat', null, h('div.faint', null, '本周'), h('div.cal-stat-val', null, fmtDur(weekMs))),
+              h('div.cal-stat', null,
+                h('div.faint', null, '累计'),
+                h('div.cal-stat-val', null, fmtDur(totalMs)),
+                h('div.faint', null, '玩了 ' + dayMap.size + ' 天')),
+            ],
         ),
+        useSite
+          ? h('div.faint', { style: { marginTop: '-2px', lineHeight: '1.7' } },
+              `来自皮肤站 · 本地记录：今天 ${fmtDur(todayMs)} · 本周 ${fmtDur(weekMs)}`)
+          : null,
         h('div.cal-detail', null,
           h('div.cal-detail-title', null, (selected.getMonth() + 1) + '月' + selected.getDate() + '日你游玩了：'),
           ids.length
             ? h('div.faint', null, ids.join('、') + ' · 共 ' + fmtDur(rec.ms))
             : h('div.faint', null, '这一天没有游玩记录。'),
         ),
-      );
+      ].flat().filter(Boolean));
     }
     card.__refresh = draw;
     draw();
@@ -940,7 +1059,7 @@
       ? h('div.card.announce-card', null,
           h('div.card-head', null, h('div.card-title.ellipsis', { title: activeDomain.name + ' · 公告', style: { minWidth: 0 } }, activeDomain.name + ' · 公告')),
           h('div.card-body', null,
-            h('div.banner.banner-info', null, '✦', h('div.grow', null, domainAnnouncement || '域管理员还没有发布公告。')),
+            h('div.banner.banner-info', null, '✦', h('div.grow', { style: { whiteSpace: 'pre-wrap', lineHeight: '1.75', overflowWrap: 'anywhere', minWidth: 0 } }, domainAnnouncement || '域管理员还没有发布公告。')),
             h('div.muted', null, '当前处于站点型域，服务器、资源与账号由该域管理。'),
           ),
         )
@@ -985,8 +1104,13 @@
         if (els.launchBtn) setLaunching(els.launchBtn, false, running ? '再启动一个' : undefined);
         const holder = els.runningWidget || els.runningCard;
         if (holder) {
-          holder.style.display = running ? 'block' : 'none';
-          if (els.canvas) updateCanvasHeight(els.canvas);
+          if (holder.dataset.domainLocked === '1') {
+            holder.dataset.gameHidden = running ? '0' : '1';
+            if (els.canvas && els.canvas.__domainLayout) applyDomainLayout(els.canvas, els.canvas.__domainLayout);
+          } else {
+            holder.style.display = running ? 'flex' : 'none';
+            if (els.canvas) updateCanvasHeight(els.canvas);
+          }
         }
       });
     }
@@ -1128,14 +1252,19 @@
     setLaunching(btn, true, '启动中…');
     try {
       // 启动前自动补全缺失依赖（jar 损坏检测在主进程 repair.check 里）
-      await window.smcl.launch(id, inst ? inst.dir : undefined);
-      window.Toast.success(`已启动 ${id}`);
+      await window.LaunchFeedback.run(
+        () => window.smcl.launch(id, inst ? inst.dir : undefined),
+        { title: '正在启动游戏…', success: '游戏启动成功' }
+      );
       setLaunching(btn, false, '再启动一个');
       window.Store.set({ gameRunning: true });
-      if (els.runningWidget) { els.runningWidget.style.display = 'block'; if (els.canvas) updateCanvasHeight(els.canvas); }
+      if (els.runningWidget) {
+        els.runningWidget.dataset.gameHidden = '0';
+        if (els.canvas && els.canvas.__domainLayout) applyDomainLayout(els.canvas, els.canvas.__domainLayout);
+        else { els.runningWidget.style.display = 'block'; if (els.canvas) updateCanvasHeight(els.canvas); }
+      }
     } catch (e) {
       setLaunching(btn, false);
-      window.Toast.error(String(e.message || e).replace(/^Error invoking remote method '[^']+':s*(Error:s*)?/, '').replace(/^Error:s*/, ''));
       // 启动失败后立即刷新实例状态（可能缺 jar）
       window.app.refreshInstalled();
     }

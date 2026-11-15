@@ -638,7 +638,22 @@
         return;
       }
       const dt = e.dataTransfer || {};
-      const text = dt.getData('text/uri-list') || dt.getData('text/plain') || '';
+      const text = String(dt.getData('text/uri-list') || dt.getData('text/plain') || '').trim();
+      // 皮肤站「添加到启动器」拖拽：直接添加域，不要当成普通网址处理
+      if (/^(swustmcl:domain:|ymcl:site:|swustmcl:\/\/(?:add-domain|domain)\b)/i.test(text)) {
+        try {
+          const item = await window.smcl.domainsAdd(text);
+          if (window.DomainContext) {
+            await window.DomainContext.reloadState();
+            await window.DomainContext.switchTo(item.id);
+          } else {
+            window.Toast.success('已添加域：' + item.name);
+          }
+        } catch (err) {
+          window.Toast.error(String((err && err.message) || err));
+        }
+        return;
+      }
       let mm = String(text).match(/https?:\/\/[^\s"'<>]+/i);
       if (!mm) {
         // 兜底：从拖入的网页片段（text/html）里提取链接（取捕获组，别把 href=" 一起带进去）

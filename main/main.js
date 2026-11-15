@@ -916,7 +916,8 @@ ipcMain.handle('game:launch', async (_e, payload) => {
   let packMinJava = 0;
   try {
     const marker = core.domainpacks.readMarker(path.join(dir || settingsLib.ensureGameDir(), 'versions', id));
-    packMinJava = Number(marker.minJava) || 0;
+    const active = core.domainpacks.markerPacks(marker).find((entry) => entry.packId === marker.activePackId);
+    packMinJava = Number(active && active.minJava) || 0;
   } catch {}
 
   // 启动前体检：库/资源缺失会自动补全（否则 Fabric 等加载器会 ClassNotFoundException）
@@ -1499,18 +1500,15 @@ ipcMain.handle('domainpacks:scan', async (_e, payload) => {
   const instanceDir = path.join(String((payload && payload.dir) || ''), 'versions', String((payload && payload.id) || ''));
   const marker = core.domainpacks.readMarker(instanceDir);
   const activeDomain = core.domains.active();
-  const sameDomain = marker.packId && marker.domainId === activeDomain.id;
+  const packs = core.domainpacks.markerPacks(marker).filter((entry) => entry.domainId === activeDomain.id);
   return {
     instance,
     fileCount: scan.files.length,
     totalSize: scan.totalSize,
-    marker: sameDomain ? {
-      packId: marker.packId,
-      packName: marker.packName || '',
-      version: Number(marker.version) || 0,
-      minJava: Number(marker.minJava) || 0,
-      policy: marker.policy || '',
-      serverId: marker.serverId || '',
+    marker: packs.length ? {
+      packs,
+      activePackId: marker.activePackId || '',
+      activeVersion: Number(marker.activeVersion) || 0,
     } : null,
   };
 });
@@ -1560,22 +1558,46 @@ ipcMain.handle('domainpacks:installed', () => {
   for (const inst of core.versions.listInstalled(gameDirs())) {
     const instanceDir = path.join(inst.dir, 'versions', inst.id);
     const marker = core.domainpacks.readMarker(instanceDir);
-    if (!marker || !marker.packId) continue;
-    out.push({
-      id: inst.id,
-      dir: inst.dir,
-      mcVersion: inst.mcVersion,
-      loader: inst.loader,
-      isolated: inst.isolated,
-      packId: marker.packId,
-      packName: marker.packName || '',
-      version: Number(marker.version) || 0,
-      minJava: Number(marker.minJava) || 0,
-      policy: marker.policy || '',
-      serverId: marker.serverId || '',
-    });
+    for (const entry of core.domainpacks.markerPacks(marker)) {
+      out.push({
+        id: inst.id,
+        dir: inst.dir,
+        mcVersion: inst.mcVersion,
+        loader: inst.loader,
+        isolated: inst.isolated,
+        domainId: entry.domainId,
+        packId: entry.packId,
+        packName: entry.packName || '',
+        version: entry.version,
+        minJava: entry.minJava,
+        policy: entry.policy || '',
+        serverId: entry.serverId || '',
+        active: marker.activePackId === entry.packId,
+      });
+    }
   }
   return out;
+});
+ipcMain.handle('domainpacks:playtime', async (_e, payload) => {
+  const domainId = String((payload && payload.domainId) || '');
+  const domain = domainId ? core.domains.find(domainId) : core.domains.active();
+  if (!domain || domain.personal || !domain.url) return null;
+  const authlib = settingsLib.getSecret('authlib');
+  if (!authlib || !authlib.accessToken) return null;
+  const manifest = domain.manifest || {};
+  const root = normalizeDomainRoot((manifest.auth && manifest.auth.yggdrasilUrl) || manifest.yggdrasilUrl || '');
+  if (root && normalizeDomainRoot(authlib.root) !== root) return null;
+  try {
+    const response = await fetch(String(domain.url).replace(/\/+$/, '') + '/api/plugins/minecraft-server/me', {
+      headers: { Authorization: 'Bearer ' + authlib.accessToken, Accept: 'application/json' },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!response.ok) return null;
+    const json = await response.json();
+    return json && json.ok && json.data ? json.data : null;
+  } catch {
+    return null;
+  }
 });
 ipcMain.handle('domains:downloadResource', async (_e, payload) => {
   const id = String((payload && payload.domainId) || '');

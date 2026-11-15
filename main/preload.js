@@ -142,6 +142,7 @@ contextBridge.exposeInMainWorld('smcl', {
   domainPackTokenStatus: (domainId) => ipcRenderer.invoke('domainpacks:tokenStatus', { domainId }),
   domainPackSetToken: (domainId, token) => ipcRenderer.invoke('domainpacks:setToken', { domainId, token }),
   domainPackInstalled: () => ipcRenderer.invoke('domainpacks:installed'),
+  domainPlaytime: (domainId) => ipcRenderer.invoke('domainpacks:playtime', { domainId }),
   onDomainPackProgress: (cb) => on('domainpacks:progress', cb),
 
   historyList: () => ipcRenderer.invoke('history:list'),

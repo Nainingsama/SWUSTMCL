@@ -137,11 +137,13 @@
     if (!domain || domain.personal || !pack || !pack.id) return { id: srv.instanceId, dir: srv.dir || '' };
     const policy = pack.policy === 'required' ? 'required' : 'optional';
     const installed = (await installedPacks()).filter((item) => item.packId === pack.id);
-    const current = installed.sort((a, b) => b.version - a.version)[0] || null;
+    const current = installed.find((item) => item.active)
+      || installed.sort((a, b) => b.version - a.version)[0]
+      || null;
 
     if (policy === 'required') {
       const latest = Number(pack.latestVersion) || 0;
-      if (current && current.version === latest) {
+      if (current && current.active && current.version === latest) {
         return { id: current.id, dir: current.dir };
       }
       const ok = await confirmInstall(pack, Boolean(current), current);
@@ -178,5 +180,68 @@
     return result ? { id: result.instanceId, dir: result.dir } : null;
   }
 
-  window.DomainPackJoin = { prepareJoin };
+  async function state(srv) {
+    const pack = srv && srv.pack;
+    if (!pack || !pack.id) return { pack: null, installed: [], current: null, latest: 0, upToDate: false };
+    const installed = (await installedPacks()).filter((item) => item.packId === pack.id);
+    const current = installed.find((item) => item.active)
+      || installed.sort((a, b) => b.version - a.version)[0]
+      || null;
+    const latest = Number(pack.latestVersion) || 0;
+    return {
+      pack,
+      installed,
+      current,
+      latest,
+      upToDate: Boolean(current && current.active && current.version === latest),
+    };
+  }
+
+  async function download(srv) {
+    const domain = activeDomain();
+    const pack = srv && srv.pack;
+    if (!domain || domain.personal || !pack || !pack.id) return null;
+    const st = await state(srv);
+    const current = st.current;
+    const result = await runInstall({
+      mode: 'pack',
+      domainId: domain.id,
+      packId: pack.id,
+      serverId: srv.id,
+      mcDir: current ? current.dir : '',
+      instanceId: current ? current.id : '',
+    }, st.upToDate ? '正在校验整合包…' : (current ? '正在更新整合包…' : '正在下载整合包…'));
+    if (result) {
+      window.app.refreshInstalled();
+      window.app.reloadView();
+    }
+    return result;
+  }
+
+  async function launchOnly(srv) {
+    let st = await state(srv);
+    let inst = st.current;
+    if (!inst || !st.upToDate) {
+      const result = await download(srv);
+      if (!result) return false;
+      inst = { id: result.instanceId, dir: result.dir };
+    }
+    await window.LaunchFeedback.run(
+      () => window.smcl.launch(inst.id, inst.dir),
+      { title: '正在启动游戏…', success: '游戏启动成功' }
+    );
+    return true;
+  }
+
+  async function join(srv) {
+    const inst = await prepareJoin(srv);
+    if (!inst) return false;
+    await window.LaunchFeedback.run(
+      () => window.smcl.launch(inst.id, inst.dir, { server: { host: srv.host, port: srv.port } }),
+      { title: '正在进入服务器…', success: '游戏已启动，正在进入服务器' }
+    );
+    return true;
+  }
+
+  window.DomainPackJoin = { prepareJoin, state, download, launchOnly, join };
 })();

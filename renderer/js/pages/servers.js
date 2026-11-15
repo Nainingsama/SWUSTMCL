@@ -150,6 +150,25 @@
     );
   }
 
+  function packActionButton(srv) {
+    if (!srv.pack || !window.DomainPackJoin) return null;
+    const btn = h('button.btn.btn-ghost.btn-sm', {
+      title: '下载/启动整合包（不自动进服）',
+      onclick: async () => {
+        btn.disabled = true;
+        if (btn.dataset.upToDate === '1') await window.DomainPackJoin.launchOnly(srv);
+        else await window.DomainPackJoin.download(srv);
+        btn.disabled = false;
+      },
+    }, '下载');
+    window.DomainPackJoin.state(srv).then((st) => {
+      btn.dataset.upToDate = st.upToDate ? '1' : '0';
+      btn.textContent = st.upToDate ? '启动' : '下载';
+      btn.title = st.upToDate ? '启动游戏（不自动进服）' : '下载/更新整合包';
+    }).catch(() => {});
+    return btn;
+  }
+
   function serverCard(srv) {
     const dot = statusDot();
     const pb = playersBar(srv);
@@ -166,7 +185,7 @@
             srv.builtin ? h('span.badge.badge-blue', null, '校服') : null,
             srv.pack ? h('span.badge.badge-orange', null, srv.pack.policy === 'required' ? '必装' : '可选') : null,
           ),
-          h('div.faint', null, srv.domain ? '来自域 · 由管理员维护' : srv.instanceId ? (boundOk ? '绑定实例：' + srv.instanceId : '绑定实例未安装：' + srv.instanceId) : '未绑定整合包'),
+          h('div.faint', null, srv.domain ? ('来自域 · 由管理员维护' + ((srv.altHosts || []).length ? ' · 次 IP ' + srv.altHosts.length + ' 个' : '')) : srv.instanceId ? (boundOk ? '绑定实例：' + srv.instanceId : '绑定实例未安装：' + srv.instanceId) : '未绑定整合包'),
         ),
         dot,
         srv.domain ? null : h('button.iconbtn', { title: '编辑 / 删除', onclick: () => editServerFlow(srv) }, ic('dots', 16)),
@@ -174,7 +193,10 @@
       meta,
       pb,
       addrRow(srv),
-      h('button.btn.btn-primary.btn-sm.srv-join.pressable', { onclick: () => joinFlow(srv) }, ic('play', 14), '一键进服'),
+      h('div.row', { style: { gap: '6px', marginTop: '8px' } },
+        packActionButton(srv),
+        h('button.btn.btn-primary.btn-sm.srv-join.pressable', { style: { flex: '1' }, onclick: () => joinFlow(srv) }, ic('play', 14), '进服'),
+      ),
     );
     card.__dot = dot; card.__pb = pb; card.__meta = meta; card.__avatar = avatarEl;
     return card;
@@ -197,6 +219,7 @@
       h('button.btn.btn-ghost.btn-xs', {
         onclick: async () => { try { await window.smcl.clipboardWrite(srv.host + ':' + srv.port); window.Toast.success('已复制地址'); } catch (e) { window.Toast.error(e.message); } },
       }, ic('copy', 14)),
+      packActionButton(srv),
       h('button.btn.btn-primary.btn-xs.pressable', { onclick: () => joinFlow(srv) }, ic('play', 13), '进服'),
       srv.domain ? null : h('button.iconbtn', { title: '编辑 / 删除', onclick: () => editServerFlow(srv) }, ic('dots', 16)),
     );
@@ -285,9 +308,7 @@
 
   function joinFlow(srv) {
     if (srv.pack && window.DomainPackJoin) {
-      window.DomainPackJoin.prepareJoin(srv).then((prepared) => {
-        if (prepared) launchJoin(prepared, srv);
-      }).catch((e) => window.Toast.error(String(e.message || e)));
+      window.DomainPackJoin.join(srv).catch(() => {});
       return;
     }
     const installed = window.Store.get('installed') || [];
@@ -334,12 +355,12 @@
       }
     }
     try {
-      window.Toast.info('正在启动 ' + inst.id + ' 并加入 ' + srv.host + ':' + srv.port + '…');
-      await window.smcl.launch(inst.id, inst.dir, { server: { host: srv.host, port: srv.port } });
+      await window.LaunchFeedback.run(
+        () => window.smcl.launch(inst.id, inst.dir, { server: { host: srv.host, port: srv.port } }),
+        { title: '正在进入服务器…', success: '游戏已启动，正在进入服务器' }
+      );
       window.Store.set({ gameRunning: true });
-    } catch (e) {
-      window.Toast.error(String(e.message || e).replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '').replace(/^Error:\s*/, ''));
-    }
+    } catch {}
   }
 
   window.Pages = window.Pages || {};

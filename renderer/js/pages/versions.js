@@ -916,13 +916,12 @@
 
   async function launchOne(v) {
     try {
-      await window.smcl.launch(v.id, v.dir);
-      window.Toast.success(`已启动 ${v.id}`);
+      await window.LaunchFeedback.run(
+        () => window.smcl.launch(v.id, v.dir),
+        { title: '正在启动游戏…', success: '游戏启动成功' }
+      );
       window.app.goto('home');
-    } catch (e) {
-      const msg = String(e.message || e).replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '').replace(/^Error:\s*/, '');
-      window.Toast.error(msg);
-    }
+    } catch {}
   }
 
   async function repairOne(v) {

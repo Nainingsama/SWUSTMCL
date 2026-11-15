@@ -209,12 +209,24 @@ function build(id, options = {}) {
   const classpath = [clientJar, ...libs].join(path.delimiter);
   extractNatives(nativeJars, nativesDir);
 
+  const joinServer = options.server && options.server.host
+    ? { host: String(options.server.host), port: Number(options.server.port) || 25565 }
+    : null;
+  const joinAddress = joinServer ? `${joinServer.host}:${joinServer.port}` : '';
+  // 1.20+ 使用 Quick Play 参数直连服务器；旧版本仍用 --server/--port。
+  const quickPlaySupported = Boolean(
+    joinServer &&
+    meta.arguments &&
+    Array.isArray(meta.arguments.game) &&
+    JSON.stringify(meta.arguments.game).includes('quickPlayMultiplayer')
+  );
+
   const features = {
     is_demo_user: false,
     has_custom_resolution: Boolean(options.resolution && options.resolution.enabled),
-    has_quick_plays_support: false,
+    has_quick_plays_support: quickPlaySupported,
     is_quick_play_singleplayer: false,
-    is_quick_play_multiplayer: false,
+    is_quick_play_multiplayer: quickPlaySupported,
     is_quick_play_realms: false,
   };
 
@@ -249,7 +261,7 @@ function build(id, options = {}) {
     '${resolution_height}': String((options.resolution && options.resolution.height) || 530),
     '${quickPlayPath}': '',
     '${quickPlaySingleplayer}': '',
-    '${quickPlayMultiplayer}': '',
+    '${quickPlayMultiplayer}': quickPlaySupported ? joinAddress : '',
     '${quickPlayRealms}': '',
   };
 
@@ -308,10 +320,10 @@ function build(id, options = {}) {
   }
 
   if (options.fullscreen && !game.includes('--fullscreen')) game.push('--fullscreen');
-  // 服务器一键加入：--server <host> --port <port>
-  if (options.server && options.server.host) {
-    game.push('--server', String(options.server.host));
-    if (options.server.port) game.push('--port', String(options.server.port));
+  // 服务器一键加入：新版本用 Quick Play，旧版本回退 --server/--port
+  if (joinServer && !quickPlaySupported) {
+    game.push('--server', joinServer.host);
+    if (joinServer.port) game.push('--port', String(joinServer.port));
   }
 
   return {

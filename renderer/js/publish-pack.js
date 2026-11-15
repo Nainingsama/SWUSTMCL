@@ -84,25 +84,32 @@
     if (!(await ensureToken(domain))) return;
 
     const servers = ((domain.manifest && domain.manifest.servers) || []).filter((server) => server.visible !== false);
-    const marker = scan.marker || {};
-    const defaultName = marker.packName || instance.displayName || instance.id;
+    const markerPacks = (scan.marker && Array.isArray(scan.marker.packs)) ? scan.marker.packs : [];
+    const existingFor = (serverId) => markerPacks.find((entry) => entry.serverId === serverId) || null;
+    const boundServers = new Set(markerPacks.map((entry) => entry.serverId));
+    const initialServer = servers.find((server) => boundServers.has(server.id)) || servers[0] || null;
+    const initialExisting = initialServer ? existingFor(initialServer.id) : null;
+    const defaultName = (initialExisting && initialExisting.packName) || instance.displayName || instance.id;
 
     const name = h('input.input', { value: defaultName, maxlength: '80' });
     const desc = h('input.input', { placeholder: '整合包介绍（可选）' });
     const serverSel = h('select.select', { style: { width: '100%' } },
       ...servers.map((server) => h('option', {
         value: server.id,
-        selected: marker.serverId === server.id,
+        selected: initialServer && initialServer.id === server.id,
       }, server.name + (server.pack ? `（已绑定：${server.pack.name}）` : ''))),
     );
-    let policy = marker.policy === 'required' ? 'required' : 'optional';
-    let minJava = marker.minJava || 0;
+    let policy = initialExisting && initialExisting.policy === 'required' ? 'required' : 'optional';
+    let minJava = Number(initialExisting && initialExisting.minJava) || 0;
     if (!MIN_JAVA_OPTIONS.includes(Number(minJava))) minJava = 0;
     const minJavaSel = h('select.select', { style: { width: '100%' } },
       ...MIN_JAVA_OPTIONS.map((value) => h('option', { value: String(value), selected: Number(minJava) === value },
         value ? `Java ${value}+` : '不设置')),
     );
+    const serverInfo = h('div.faint', { style: { marginTop: '6px', lineHeight: '1.7' } });
     const notes = h('input.input', { placeholder: '本次版本说明（可选，如：更新模组列表）' });
+    let nameTouched = false;
+    name.addEventListener('input', () => { nameTouched = true; });
 
     const policyCards = [];
     const setPolicy = (value) => {
@@ -127,11 +134,33 @@
       return el;
     };
 
+    const applySelectedServer = () => {
+      const existing = existingFor(serverSel.value);
+      if (existing) {
+        serverInfo.textContent = `将更新该服务器上的「${existing.packName || existing.packId}」v${existing.version}。`;
+        if (!nameTouched) name.value = existing.packName || instance.displayName || instance.id;
+        setPolicy(existing.policy === 'required' ? 'required' : 'optional');
+        minJavaSel.value = MIN_JAVA_OPTIONS.includes(Number(existing.minJava)) ? String(existing.minJava) : '0';
+      } else {
+        serverInfo.textContent = '该服务器还没有本实例的整合包：发布会新建一个包。';
+        if (!nameTouched) name.value = instance.displayName || instance.id;
+        setPolicy('optional');
+        minJavaSel.value = '0';
+      }
+    };
+    serverSel.addEventListener('change', applySelectedServer);
+
+    const boundText = markerPacks
+      .map((entry) => {
+        const server = servers.find((item) => item.id === entry.serverId);
+        return `${server ? server.name : entry.serverId} v${entry.version}`;
+      })
+      .join(' · ');
     const info = h('div.muted', { style: { lineHeight: '1.8' } },
       `实例：${scan.instance.name} · ${scan.instance.mcVersion || '未知版本'} · ${scan.instance.loader || '原版'}`,
       h('br'),
       `文件：${scan.fileCount} 个 · ${fmtBytes(scan.totalSize)}`,
-      marker.packId ? h('span', null, h('br'), `已发布过：${marker.packName || marker.packId} v${marker.version || 1}`) : null,
+      boundText ? h('span', null, h('br'), `已发布：${boundText}`) : null,
     );
     const progressText = h('div.faint', { style: { minHeight: '20px', marginTop: '8px' } });
     const progressBar = h('div.progress-bar', { style: { width: '0%' } });
@@ -198,12 +227,12 @@
     }
 
     modal = window.Modal.open({
-      title: marker.packId ? '更新整合包发布' : '发布整合包到域',
+      title: '发布整合包到域',
       body: (el) => el.append(
         info,
         h('div.field.mt-12', null, h('span.field-label', null, '整合包名称'), name),
         h('div.field.mt-8', null, h('span.field-label', null, '介绍'), desc),
-        h('div.field.mt-8', null, h('span.field-label', null, '绑定服务器'), serverSel),
+        h('div.field.mt-8', null, h('span.field-label', null, '绑定服务器'), serverSel, serverInfo),
         h('div.field-label', { style: { marginTop: '12px' } }, '绑定方式'),
         policyCard('required', '必装整合包', '玩家进服前必须安装；未安装时引导新建实例并安装，已安装时自动更新。'),
         policyCard('optional', '原版增强包', '玩家可选；进服时三选一：本地对应实例 / 下载增强包 / 下载纯净原版。'),
@@ -218,7 +247,7 @@
         okBtn,
       ],
     });
-    setPolicy(policy);
+    applySelectedServer();
     modal.then(() => { unsub(); if (!finished) okBtn.textContent = '开始发布'; });
   }
 

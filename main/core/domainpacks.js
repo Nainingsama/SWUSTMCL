@@ -217,16 +217,75 @@ async function scanInstance(dir, instanceId) {
   };
 }
 
+function normalizeMarker(raw) {
+  const marker = raw && typeof raw === 'object' ? { ...raw } : {};
+  const packs = [];
+  if (Array.isArray(marker.packs)) {
+    for (const entry of marker.packs) {
+      if (!entry || !entry.packId || !entry.serverId) continue;
+      packs.push({
+        packId: String(entry.packId),
+        packName: String(entry.packName || ''),
+        domainId: String(entry.domainId || marker.domainId || ''),
+        serverId: String(entry.serverId),
+        version: Number(entry.version) || 0,
+        policy: entry.policy === 'required' ? 'required' : 'optional',
+        minJava: Number(entry.minJava) || 0,
+      });
+    }
+  }
+  // 旧格式：一个实例只记录一个 pack
+  if (marker.packId && marker.serverId && !packs.some((entry) => entry.packId === marker.packId)) {
+    packs.push({
+      packId: String(marker.packId),
+      packName: String(marker.packName || ''),
+      domainId: String(marker.domainId || ''),
+      serverId: String(marker.serverId),
+      version: Number(marker.version) || 0,
+      policy: marker.policy === 'required' ? 'required' : 'optional',
+      minJava: Number(marker.minJava) || 0,
+    });
+  }
+  marker.packs = packs;
+  marker.activePackId = String(marker.activePackId || marker.packId || '');
+  marker.activeVersion = Number(marker.activeVersion || marker.version) || 0;
+  return marker;
+}
+
+function markerPacks(marker) {
+  return normalizeMarker(marker).packs;
+}
+
+function markerPack(marker, domainId, serverId) {
+  return markerPacks(marker).find(
+    (entry) => entry.domainId === String(domainId || '') && entry.serverId === String(serverId || '')
+  ) || null;
+}
+
+function markerActive(marker) {
+  const normalized = normalizeMarker(marker);
+  return {
+    packId: normalized.activePackId,
+    version: normalized.activeVersion,
+  };
+}
+
 function readMarker(instanceDir) {
   try {
-    return JSON.parse(fs.readFileSync(path.join(instanceDir, MARKER), 'utf8')) || {};
+    return normalizeMarker(JSON.parse(fs.readFileSync(path.join(instanceDir, MARKER), 'utf8')));
   } catch {
-    return {};
+    return normalizeMarker({});
   }
 }
 
 function writeMarker(instanceDir, marker) {
-  fs.writeFileSync(path.join(instanceDir, MARKER), JSON.stringify(marker, null, 2), 'utf8');
+  const normalized = normalizeMarker(marker);
+  delete normalized.packId;
+  delete normalized.serverId;
+  delete normalized.version;
+  delete normalized.policy;
+  delete normalized.minJava;
+  fs.writeFileSync(path.join(instanceDir, MARKER), JSON.stringify(normalized, null, 2), 'utf8');
 }
 
 async function uploadBlob(domain, token, hash, file, size, onBytes) {
@@ -272,10 +331,10 @@ async function publish({ domainId, dir, instanceId, serverId, policy, minJava, n
   const scan = await scanInstance(dir, instanceId);
   const instanceDir = safe.safeJoin(path.join(dir, 'versions'), instanceId);
   const marker = readMarker(instanceDir);
-  const sameDomain = marker.domainId === domain.id;
+  const existing = markerPack(marker, domain.id, serverId);
   const payload = {
-    packId: sameDomain ? (marker.packId || '') : '',
-    name: String(name || (sameDomain && marker.packName) || scan.instance.name).trim(),
+    packId: existing ? existing.packId : '',
+    name: String(name || (existing && existing.packName) || marker.packName || scan.instance.name).trim(),
     description: String(description || '').trim(),
     serverId: String(serverId || ''),
     policy: String(policy || 'optional'),
@@ -327,15 +386,24 @@ async function publish({ domainId, dir, instanceId, serverId, policy, minJava, n
   const result = await siteFetch(domain, '/admin/pack/commit', {
     method: 'POST', token, body: { ...payload, packId }, timeout: 120000,
   });
-  writeMarker(instanceDir, {
+  const packs = markerPacks(marker).filter(
+    (entry) => !(entry.domainId === domain.id && entry.serverId === payload.serverId)
+  );
+  packs.push({
     domainId: domain.id,
+    serverId: payload.serverId,
     packId,
     packName: payload.name,
-    serverId: payload.serverId,
+    version: Number(result.latestVersion) || 0,
     policy: payload.policy,
     minJava: payload.minJava,
-    version: Number(result.latestVersion) || 0,
+  });
+  writeMarker(instanceDir, {
+    domainId: domain.id,
     instanceId,
+    packs,
+    activePackId: packId,
+    activeVersion: Number(result.latestVersion) || 0,
     publishedAt: new Date().toISOString(),
     files: scan.files.map((file) => ({ path: file.path, hash: file.hash, size: file.size })),
   });
@@ -428,23 +496,33 @@ async function installPack({ domainId, packId, serverId, mcDir, instanceId, onPr
   await fsp.mkdir(instanceDir, { recursive: true });
   if (onProgress) onProgress({ stage: 'files', message: '正在同步整合包文件…', done: 0, total: (pack.files || []).length });
   await syncPackFiles(domain, pack, instanceDir, oldMarker, onProgress);
-  writeMarker(instanceDir, {
+  const installedVersion = Number(pack.version && pack.version.version) || Number(pack.latestVersion) || 0;
+  const packs = markerPacks(oldMarker).filter(
+    (entry) => !(entry.domainId === domain.id && entry.serverId === (pack.serverId || serverId))
+  );
+  packs.push({
     domainId: domain.id,
+    serverId: pack.serverId || serverId,
     packId: pack.id,
     packName: pack.name,
-    serverId: pack.serverId,
+    version: installedVersion,
     policy: pack.policy,
     minJava: Number(pack.minJava) || 0,
-    version: Number(pack.version && pack.version.version) || Number(pack.latestVersion) || 0,
+  });
+  writeMarker(instanceDir, {
+    domainId: domain.id,
     instanceId: id,
+    packs,
+    activePackId: pack.id,
+    activeVersion: installedVersion,
     publishedAt: new Date().toISOString(),
     files: (pack.files || []).map((file) => ({ path: file.path, hash: file.hash, size: file.size })),
   });
-  log.info(`整合包已安装：${pack.name} v${pack.version && pack.version.version} → ${id}`);
+  log.info(`整合包已安装：${pack.name} v${installedVersion} → ${id}`);
   return {
     instanceId: id,
     dir: targetMcDir,
-    version: Number(pack.version && pack.version.version) || 0,
+    version: installedVersion,
     packId: pack.id,
     minJava: Number(pack.minJava) || 0,
   };
@@ -474,6 +552,9 @@ module.exports = {
   publishToken,
   setPublishToken,
   readMarker,
+  markerPacks,
+  markerPack,
+  markerActive,
   apiBase,
   domainById,
 };

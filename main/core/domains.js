@@ -91,6 +91,25 @@ function normalizePack(raw, base) {
   };
 }
 
+function normalizeHomeLayout(raw) {
+  if (!raw || typeof raw !== 'object' || !raw.cards || typeof raw.cards !== 'object') return null;
+  const ids = ['launch', 'status', 'running', 'servers', 'calendar', 'announce', 'clock'];
+  const cards = {};
+  for (const id of ids) {
+    const card = raw.cards[id];
+    if (!card || typeof card !== 'object') continue;
+    cards[id] = {
+      visible: card.visible !== false,
+      col: Math.max(1, Math.min(12, Number(card.col) || 1)),
+      width: Math.max(1, Math.min(12, Number(card.width) || 1)),
+      row: Math.max(1, Math.min(200, Number(card.row) || 1)),
+      height: Math.max(1, Math.min(30, Number(card.height) || 1)),
+    };
+  }
+  if (!Object.keys(cards).length) return null;
+  return { version: 1, columns: 12, rowHeight: 40, gap: 16, cards };
+}
+
 function normalizeServer(raw, base) {
   if (!raw || typeof raw !== 'object') return null;
   const host = String(raw.host || '').trim();
@@ -102,6 +121,9 @@ function normalizeServer(raw, base) {
     host,
     port,
     note: String(raw.note || '').slice(0, 200),
+    altHosts: Array.isArray(raw.altHosts)
+      ? raw.altHosts.map((host) => String(host || '').trim()).filter(Boolean).slice(0, 16)
+      : [],
     icon: resolveUrl(raw.icon, base),
     sortOrder: Number(raw.sortOrder) || 0,
     online: Boolean(raw.online),
@@ -162,6 +184,7 @@ function normalizeManifest(raw, base) {
     servers,
     resources,
     packs,
+    homeLayout: normalizeHomeLayout(raw.homeLayout),
     updatedAt: raw.updatedAt || null,
   };
 }
@@ -189,6 +212,7 @@ function personalDomain() {
       servers: [],
       resources: [],
       packs: [],
+      homeLayout: null,
       auth: null,
       curseforge: null,
     },
