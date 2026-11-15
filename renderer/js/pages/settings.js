@@ -473,7 +473,7 @@
         row('显卡偏好', '把 javaw.exe 写入 Windows「按应用设置图形性能」；开启后每次启动启动器都会重新写入，注册表被驱动更新清掉也能恢复', gpuCell, true),
         row('新版本提醒', '后台每 5 分钟检查 Minecraft 新正式版，弹系统通知', autoCheck),
         row('启动器更新', '检查 GitHub Release 增量更新包（体积 / SHA-256 / zip 结构三重校验）', h('div.row', null, updateBtn, autoUpdate)),
-        row('关于', `星启 SWUSTMCL v${(window.smcl && window.smcl.version) || '1.0.0'} · MIT License`,
+        row('关于', `星启 SWUSTMCL v${(window.Store.state.version || '')} · MIT License`,
           h('button.btn.btn-ghost.btn-sm', { onclick: () => window.smcl.openUrl('https://github.com/Nainingsama/SWUSTMCL').catch(() => {}) }, 'GitHub')),
       ),
     );

@@ -280,6 +280,7 @@
       settings: state.settings,
       account: state.account,
       dirs: state.dirs,
+      version: state.version || '',
       gameRunning: state.gameRunning,
       latestRelease: state.latestRelease,
       sysMemory: state.sysMemory || 0,
