@@ -363,7 +363,7 @@ async function downloadLarge(url, dest, opts = {}) {
         if (extSignal) { const onAbort = () => controller.abort(new Error('已取消')); if (extSignal.aborted) onAbort(); else extSignal.addEventListener('abort', onAbort, { once: true }); }
         const idleMs = Math.max(8000, Number(opts.idleTimeout) || 0); // 单分片 8 秒无数据即重连（已收字节会保留）
         let idle = null;
-        connectTimer = setTimeout(() => controller.abort(new Error('connect timeout')), 25000);
+        connectTimer = setTimeout(() => controller.abort(new Error('connect timeout')), 15000);
         const from = start + got;
         const res = await fetch(url, {
           headers: { 'User-Agent': UA, Range: `bytes=${from}-${end}`, ...(opts.headers || {}) },
