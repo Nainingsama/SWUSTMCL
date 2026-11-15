@@ -415,8 +415,10 @@ app.whenReady().then(async () => {
         const inst = path.join(vroot, name);
         if (!fs.existsSync(path.join(inst, '.swustmcl-importing'))) continue;
         try {
+          const age = Date.now() - fs.statSync(path.join(inst, '.swustmcl-importing')).mtimeMs;
+          if (age < 3 * 24 * 3600 * 1000) continue; // 3 天内保留，允许续传
           fs.rmSync(inst, { recursive: true, force: true });
-          log.info('已清理未完成的导入目录：' + inst);
+          log.info('已清理过期的未完成导入目录：' + inst);
         } catch (e) { log.warn('清理未完成的导入目录失败：' + inst + ' — ' + e.message); }
       }
     }
@@ -1245,24 +1247,8 @@ ipcMain.handle('modpack:install', async (_e, payload) => {
     return r;
   } catch (e) {
     // 导入失败/取消：清掉这次新建的半成品实例目录，避免留下 26.3-BINGO / (2)
-    if (createdDir) {
-      const dir = createdDir;
-      const tryClean = () => {
-        for (let i = 0; i < 5; i++) {
-          try { fs.rmSync(dir, { recursive: true, force: true }); return true; } catch { /* 等下一轮 */ }
-        }
-        return false;
-      };
-      if (!tryClean()) {
-        setTimeout(() => { tryClean(); }, 1200);
-        setTimeout(() => {
-          if (tryClean()) log.info('已清理失败的整合包实例目录：' + dir);
-          else log.warn('实例目录仍被占用，将在下次启动时清理：' + dir);
-        }, 4000);
-      } else {
-        log.info('已清理失败的整合包实例目录：' + dir);
-      }
-    }
+    // 取消/中断：保留目录与已下载的 .part，下次同名导入可续传（列表里不会显示）
+    if (createdDir) log.info('导入已中断，保留用于续传：' + createdDir);
     if (e && e.aborted) throw new Error('已取消导入');
     throw e;
   } finally {

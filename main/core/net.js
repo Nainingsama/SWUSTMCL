@@ -350,31 +350,39 @@ async function downloadLarge(url, dest, opts = {}) {
     if (rangeUnsupported) return;
     const start = i * slice;
     const end = Math.min(total, start + slice) - 1;
+    const need = end - start + 1;
     const partPath = `${dest}.part${i}`;
     tmpParts[i] = partPath;
     let got = 0;
-    for (let attempt = 0; attempt < 2 && got !== end - start + 1; attempt++) {
-      got = 0; // 每次尝试重新写整片，避免 w 截断后仍按旧偏移写入
+    let lastErr = null;
+    await new Promise((r) => setTimeout(r, i * 120)); // 错峰建连，避免一次性打满被 CDN 排队
+    for (let attempt = 0; attempt < 6 && got < need; attempt++) {
+      let connectTimer = null;
       try {
         const controller = new AbortController();
         if (extSignal) { const onAbort = () => controller.abort(new Error('已取消')); if (extSignal.aborted) onAbort(); else extSignal.addEventListener('abort', onAbort, { once: true }); }
-        const idleMs = Math.max(20000, Number(opts.idleTimeout) || 0); // 分片握手慢，给 20 秒
-        let idle = setTimeout(() => controller.abort(new Error('stall')), idleMs);
+        const idleMs = Math.max(8000, Number(opts.idleTimeout) || 0); // 单分片 8 秒无数据即重连（已收字节会保留）
+        let idle = null;
+        connectTimer = setTimeout(() => controller.abort(new Error('connect timeout')), 25000);
+        const from = start + got;
         const res = await fetch(url, {
-          headers: { 'User-Agent': UA, Range: `bytes=${start}-${end}`, ...(opts.headers || {}) },
+          headers: { 'User-Agent': UA, Range: `bytes=${from}-${end}`, ...(opts.headers || {}) },
           signal: controller.signal,
         });
+        clearTimeout(connectTimer);
+        idle = setTimeout(() => controller.abort(new Error('stall')), idleMs);
         // 服务器不支持 Range（返回 200 全量）：放弃分片，整体重下
         if (res.status === 200) { rangeUnsupported = true; throw new Error('服务器不支持 Range'); }
+        if (res.status === 416) break; // 已下完
         if (res.status !== 206) throw new Error(`HTTP ${res.status}`);
         const reader = res.body.getReader();
-        const handle = await fsp.open(partPath, 'w');
+        const handle = await fsp.open(partPath, got > 0 ? 'a' : 'w');
         try {
           for (;;) {
             const { done, value } = await reader.read();
             idle = setTimeout(() => controller.abort(new Error('stall')), idleMs);
             if (done) break;
-            await handle.write(value, 0, value.length, got); // 分片内相对偏移，合并时按顺序拼接
+            await handle.write(value);
             got += value.length;
             receivedBytes += value.length;
             if (opts.onBytes) opts.onBytes(value.length);
@@ -384,13 +392,15 @@ async function downloadLarge(url, dest, opts = {}) {
           await handle.close();
         }
       } catch (e) {
-        if (e && /已取消/.test(e.message) || (extSignal && extSignal.aborted)) { const e2 = new Error('已取消'); e2.aborted = true; throw e2; }
+        if (connectTimer) clearTimeout(connectTimer);
+        if ((e && /已取消/.test(e.message)) || (extSignal && extSignal.aborted)) { const e2 = new Error('已取消'); e2.aborted = true; throw e2; }
         if (rangeUnsupported) return;
-        // 首次尝试一个字节都没收到：视为死链，不再重试
-        if (got === 0 && /stall|timeout|abort|已取消/i.test(String(e.message))) { errors.push(`分片${i}: ${e.message}`); return; }
-        if (attempt === 1) errors.push(`分片${i}: ${e.message}`);
+        lastErr = e;
+        if (got === 0 && /stall|timeout|abort/i.test(String(e.message)) && attempt >= 2) break;
+        await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
       }
     }
+    if (got < need) errors.push(`分片${i}: ${lastErr ? lastErr.message : '未完成'}`);
   });
 
   } catch (e) {

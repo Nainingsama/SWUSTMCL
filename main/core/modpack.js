@@ -174,7 +174,14 @@ async function importPack(file, info, hooks = {}) {
   const { zip, entries } = readZip(file);
 
   const baseName = (info.name || path.basename(file).replace(/\.(zip|mrpack)$/i, '')).replace(/[\\/:*?"<>|]/g, ' ').trim().slice(0, 48) || '整合包实例';
-  const instanceId = uniqueInstanceId(mcDir, baseName);
+  // 同名目录若还带导入标记（上次取消/中断），直接复用，已下载的 .part 可以续传
+  let instanceId = baseName;
+  const resumeDir = safe.safeJoin(path.join(mcDir, 'versions'), instanceId);
+  let resuming = false;
+  try {
+    if (fs.existsSync(path.join(resumeDir, '.swustmcl-importing'))) resuming = true;
+  } catch {}
+  if (!resuming) instanceId = uniqueInstanceId(mcDir, baseName);
   safe.assertVersionId(instanceId);
   const instanceDir = safe.safeJoin(path.join(mcDir, 'versions'), instanceId);
   await fsp.mkdir(instanceDir, { recursive: true });
@@ -305,7 +312,17 @@ async function importPack(file, info, hooks = {}) {
     let sum = 0;
     for (const v of progress.values()) sum += Math.min(1, v || 0);
     const pct = 72 + Math.round((sum / Math.max(1, todo.length)) * 24);
-    report({ stage: 'files', message: `下载清单文件 ${done}/${todo.length}`, percent: Math.min(96, pct) });
+    // 找出正在下载的文件，展示 已下载/总大小
+    let active = '';
+    for (const [rel, frac] of progress) {
+      if (frac > 0 && frac < 1) {
+        const f = todo.find((x) => String(x.path).endsWith(rel.replace(/^.*?mods\//, 'mods/')));
+        const size = f ? f.size : 0;
+        if (size) active = ` · ${(frac * size / 1048576).toFixed(1)}/${(size / 1048576).toFixed(1)} MB`;
+        break;
+      }
+    }
+    report({ stage: 'files', message: `下载清单文件 ${done}/${todo.length}${active}`, percent: Math.min(96, pct) });
   };
   const signal = hooks.signal || null;
   await net.pool(todo, Math.min(24, Math.max(1, todo.length)), async (f) => {

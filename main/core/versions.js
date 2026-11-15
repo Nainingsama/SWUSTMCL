@@ -202,6 +202,7 @@ function listInstalled(gameDirs) {
       if (!ent.isDirectory()) continue;
       const id = ent.name;
       const instDir = path.join(root, id);
+      if (fs.existsSync(path.join(instDir, '.swustmcl-importing'))) continue; // 未完成导入，续传中
       const jsonPath = path.join(instDir, `${id}.json`);
       if (!fs.existsSync(jsonPath)) continue;
       const json = readJson(jsonPath);
