@@ -144,7 +144,7 @@ function mavenPathOf(name) {
  * Fabric/Quilt 的库条目只有 maven 坐标 + 仓库 url（没有 downloads.artifact），
  * 之前只写 JSON 不下载库，装出来的实例一启动就 ClassNotFoundException。
  */
-async function downloadProfileLibraries(profile, mcDir, report, from = 62, to = 96) {
+async function downloadProfileLibraries(profile, mcDir, report, from = 62, to = 96, signal) {
   const libRoot = path.join(mcDir, 'libraries');
   const list = (profile.libraries || []).filter((l) => l && /^[\w.-]+:[\w.-]+:[^:]+/.test(String(l.name || '')));
   if (!list.length) return;
@@ -154,10 +154,12 @@ async function downloadProfileLibraries(profile, mcDir, report, from = 62, to = 
     const rel = (art && art.path) || mavenPathOf(lib.name);
     const dest = safe.safeJoin(libRoot, rel);
     const url = (art && art.url) || `${String(lib.url || 'https://maven.fabricmc.net').replace(/\/+$/, '')}/${rel}`;
+    if (signal && signal.aborted) { const e = new Error('已取消'); e.aborted = true; throw e; }
     const opts = {
       expectZip: true,
       retries: 1,
       timeout: 60000,
+      signal,
       expectedSize: (art && art.size) || 0,
       expectedSha1: (art && art.sha1) || lib.sha1 || '',
     };
@@ -175,9 +177,10 @@ async function downloadProfileLibraries(profile, mcDir, report, from = 62, to = 
   });
 }
 
-async function installFromProfileJson(profileJson, instanceId, source) {
+async function installFromProfileJson(profileJson, instanceId, source, opts = {}) {
   const mcDir = ensureMcDir();
-  instanceId = uniqueInstanceId(mcDir, instanceId);
+  // 整合包导入时目录可能已提前创建：exact 模式直接用传入的名字，不再自动加 (2)
+  if (!opts.exact) instanceId = uniqueInstanceId(mcDir, instanceId);
   safe.assertVersionId(instanceId);
   const dir = safe.safeJoin(path.join(mcDir, 'versions'), instanceId);
   await fsp.mkdir(dir, { recursive: true });
@@ -189,7 +192,7 @@ async function installFromProfileJson(profileJson, instanceId, source) {
  * 安装 Fabric / Quilt：拉 profile JSON（含继承原版），写入 versions/<实例名>/。
  * 原版底座缺失时返回 needsVanilla，让上层先装官方版本。
  */
-async function installFabricQuilt(loader, mc, loaderVersion, instanceId, source, onProgress) {
+async function installFabricQuilt(loader, mc, loaderVersion, instanceId, source, onProgress, opts = {}) {
   const report = (p) => onProgress && onProgress(p);
   report({ stage: 'meta', message: `获取 ${loader} 配置`, percent: 10 });
 
@@ -215,9 +218,10 @@ async function installFabricQuilt(loader, mc, loaderVersion, instanceId, source,
   }
 
   report({ stage: 'write', message: '写入实例', percent: 60 });
-  const r = await installFromProfileJson(profile, instanceId || `${loader}-${loaderVersion}-${mc}`, source);
+  if (opts.signal && opts.signal.aborted) { const e = new Error('已取消'); e.aborted = true; throw e; }
+  const r = await installFromProfileJson(profile, instanceId || `${loader}-${loaderVersion}-${mc}`, source, opts);
   // 关键：把加载器自身的库（fabric-loader / asm / sponge-mixin…）下载到位
-  await downloadProfileLibraries(profile, ensureMcDir(), report);
+  await downloadProfileLibraries(profile, ensureMcDir(), report, 62, 96, opts.signal);
   report({ stage: 'done', message: '安装完成', percent: 100 });
   return { ok: true, id: r.id, needsVanilla };
 }
@@ -226,7 +230,7 @@ async function installFabricQuilt(loader, mc, loaderVersion, instanceId, source,
  * 安装 Forge / NeoForge：下载 installer.jar → 用本机 Java 静默安装。
  * @returns {Promise<{ok:boolean, id:string, needsVanilla:boolean, log:string[]}>}
  */
-async function installForgeLike(loader, mc, loaderVersion, instanceId, source, onProgress) {
+async function installForgeLike(loader, mc, loaderVersion, instanceId, source, onProgress, opts = {}) {
   const report = (p) => onProgress && onProgress(p);
   const mcDir = ensureMcDir();
   const tmp = path.join(appTmp(), `installer-${Date.now()}.jar`);
@@ -245,7 +249,7 @@ async function installForgeLike(loader, mc, loaderVersion, instanceId, source, o
   const urlAlt = loader === 'neoforge' ? NEOFORGE_INSTALLER_MIRROR(loaderVersion) : url;
   report({ stage: 'download', message: '下载安装器', percent: 15 });
   try {
-    await net.download(mirror.rewrite(url, source), tmp, { expectZip: true, retries: 1, timeout: 120000 });
+    await net.download(mirror.rewrite(url, source), tmp, { expectZip: true, retries: 1, timeout: 120000, signal: opts.signal });
   } catch (e1) {
     steps.push('主源下载失败，切换镜像: ' + e1.message);
     await net.download(loader === 'neoforge' ? urlAlt : mirror.rewrite(url, alt0(source)), tmp, { expectZip: true, retries: 2, timeout: 180000 });
@@ -353,7 +357,9 @@ async function copyDir(src, dest) {
 /**
  * 加载器统一入口。原版底座缺失时自动先装原版再装加载器。
  */
-async function install(loader, mc, loaderVersion, instanceId, source, onProgress) {
+async function install(loader, mc, loaderVersion, instanceId, source, onProgress, opts = {}) {
+  const signal = opts.signal || null;
+  const abortIf = () => { if (signal && signal.aborted) { const e = new Error('已取消'); e.aborted = true; throw e; } };
   const report = (p) => onProgress && onProgress(p);
   const mcDir = ensureMcDir();
 
@@ -371,17 +377,19 @@ async function install(loader, mc, loaderVersion, instanceId, source, onProgress
     if (!entry) throw new Error(`版本清单里找不到 ${mc}`);
     const { install: installVanilla } = require('./install');
     const r = await installVanilla(mc, entry, source || 'bmcl', (p) =>
-      report({ ...p, message: `原版底座：${p.message}`, percent: Math.round((p.percent || 0) * 0.6) })
+      report({ ...p, message: `原版底座：${p.message}`, percent: Math.round((p.percent || 0) * 0.6) }), { signal }
     );
     if (!r.ok) throw new Error(`原版底座安装失败：${r.error}`);
   }
 
   if (loader === 'fabric' || loader === 'quilt') {
-    const r = await installFabricQuilt(loader, mc, loaderVersion, instanceId, source, onProgress);
+    abortIf();
+    const r = await installFabricQuilt(loader, mc, loaderVersion, instanceId, source, onProgress, opts);
   r.requestedId = instanceId;
   return r;
   }
-  return installForgeLike(loader, mc, loaderVersion, instanceId, source, onProgress);
+  abortIf();
+  return installForgeLike(loader, mc, loaderVersion, instanceId, source, onProgress, opts);
 }
 
 module.exports = { install, listLoaderVersions, FORGE_PROMO };

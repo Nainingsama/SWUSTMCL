@@ -1231,10 +1231,10 @@ ipcMain.handle('modpack:install', async (_e, payload) => {
         const manifest = await core.versions.getManifest();
         const entry = (manifest.versions || []).find((v) => v.id === mc);
         if (!entry) throw new Error(`版本清单里找不到 ${mc}`);
-        return core.install.install(mc, entry, (settingsLib.all().downloadSource === 'bmcl' ? 'bmcl' : 'mojang'), onProgress);
+        return core.install.install(mc, entry, (settingsLib.all().downloadSource === 'bmcl' ? 'bmcl' : 'mojang'), onProgress, { signal: ctl.signal });
       },
       installLoader: async (loader, mc, lv, instanceId, onProgress) => {
-        await core.loaders.install(loader, mc, lv, instanceId, (settingsLib.all().downloadSource === 'bmcl' ? 'bmcl' : 'mojang'), onProgress);
+        await core.loaders.install(loader, mc, lv, instanceId, (settingsLib.all().downloadSource === 'bmcl' ? 'bmcl' : 'mojang'), onProgress, { signal: ctl.signal, exact: true });
       },
     });
     // 校验依赖完整性
@@ -1246,10 +1246,22 @@ ipcMain.handle('modpack:install', async (_e, payload) => {
   } catch (e) {
     // 导入失败/取消：清掉这次新建的半成品实例目录，避免留下 26.3-BINGO / (2)
     if (createdDir) {
-      for (let i = 0; i < 5; i++) {
-        try { fs.rmSync(createdDir, { recursive: true, force: true }); break; } catch { await new Promise((r) => setTimeout(r, 250)); }
+      const dir = createdDir;
+      const tryClean = () => {
+        for (let i = 0; i < 5; i++) {
+          try { fs.rmSync(dir, { recursive: true, force: true }); return true; } catch { /* 等下一轮 */ }
+        }
+        return false;
+      };
+      if (!tryClean()) {
+        setTimeout(() => { tryClean(); }, 1200);
+        setTimeout(() => {
+          if (tryClean()) log.info('已清理失败的整合包实例目录：' + dir);
+          else log.warn('实例目录仍被占用，将在下次启动时清理：' + dir);
+        }, 4000);
+      } else {
+        log.info('已清理失败的整合包实例目录：' + dir);
       }
-      log.info('已清理失败的整合包实例目录：' + createdDir);
     }
     if (e && e.aborted) throw new Error('已取消导入');
     throw e;

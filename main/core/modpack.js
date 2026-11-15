@@ -211,6 +211,9 @@ async function importPack(file, info, hooks = {}) {
   if (info.mcVersion) {
     try {
       const instJsonPath = path.join(instanceDir, `${instanceId}.json`);
+      if (!fs.existsSync(instJsonPath)) {
+        throw new Error('加载器安装没有生成实例配置（' + instanceId + '.json），已中止导入');
+      }
       const instJson = JSON.parse(fs.readFileSync(instJsonPath, 'utf8'));
       const parentId = instJson.inheritsFrom;
       if (parentId) {
@@ -244,6 +247,7 @@ async function importPack(file, info, hooks = {}) {
         }
       }
     } catch (e) {
+      if (/已中止导入/.test(e.message)) throw e;
       log.warn('合并底座失败（不影响启动）：' + e.message);
     }
   }
