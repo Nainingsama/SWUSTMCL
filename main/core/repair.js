@@ -128,7 +128,9 @@ function check(mcDir, id) {
  * 修复缺失依赖。jar 头损坏的文件先删再补。
  * @param {(p:{done:number,total:number})=>void} [onProgress]
  */
-async function fix(mcDir, id, onProgress, source) {
+async function fix(mcDir, id, onProgress, source, opts = {}) {
+  const signal = opts.signal || null;
+  const abortIf = () => { if (signal && signal.aborted) { const e = new Error('已取消'); e.aborted = true; throw e; } };
   const { files } = collectExpected(mcDir, id);
   const tasks = files.filter((f) => {
     let st;
@@ -148,14 +150,16 @@ async function fix(mcDir, id, onProgress, source) {
   const remaining = [];
   let done = 0;
   const src = source || 'bmcl';
-  await net.pool(tasks, 6, async (t) => {
+  await net.pool(tasks, 12, async (t) => {
+    abortIf();
     const alt = src === 'bmcl' ? 'mojang' : 'bmcl';
     try {
-      await net.download(mirror.rewrite(t.url, src), t.dest, { expectedSize: t.size, expectedSha1: t.sha1 || '', expectZip: t.expectZip, retries: 1 });
+      await net.download(mirror.rewrite(t.url, src), t.dest, { expectedSize: t.size, expectedSha1: t.sha1 || '', expectZip: t.expectZip, retries: 1, signal });
     } catch {
       try {
-        await net.download(mirror.rewrite(t.url, alt), t.dest, { expectedSize: t.size, expectedSha1: t.sha1 || '', expectZip: t.expectZip, retries: 1 });
+        await net.download(mirror.rewrite(t.url, alt), t.dest, { expectedSize: t.size, expectedSha1: t.sha1 || '', expectZip: t.expectZip, retries: 1, signal });
       } catch (e2) {
+        if (e2 && e2.aborted) throw e2;
         remaining.push({ name: t.name, error: e2.message });
       }
     }

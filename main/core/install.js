@@ -130,7 +130,9 @@ async function extractNatives(tasks, logFn) {
  * @param {string} source 'bmcl' | 'mojang'
  * @param {(p:object)=>void} [onProgress]
  */
-async function install(id, entry, source, onProgress) {
+async function install(id, entry, source, onProgress, opts = {}) {
+  const signal = opts.signal || null;
+  const abortIf = () => { if (signal && signal.aborted) { const e = new Error('已取消'); e.aborted = true; throw e; } };
   safe.assertVersionId(id);
   const osName = require('./rules').OS_NAME;
   const started = Date.now();
@@ -260,14 +262,15 @@ async function install(id, entry, source, onProgress) {
     }
     if (!force && now - lastEmit < 180) return;
     lastEmit = now;
-    const percent = totalBytes > 0
-      ? Math.min(99, Math.round((bytes / totalBytes) * 96) + 2)
-      : Math.round((done / Math.max(1, total)) * 96) + 2;
+    const percent = total > 0
+      ? Math.min(99, Math.round((done / total) * 96) + 2)
+      : Math.min(99, Math.round((bytes / Math.max(1, totalBytes)) * 96) + 2);
     report({ stage: 'download', message: `下载中 ${done}/${total} · ${speedText}`, done, total, bytes, totalBytes, percent });
   };
 
   emit(true);
   await net.pool(tasks, threads, async (t) => {
+    abortIf();
     try {
       const r = await downloadWithFallback(
         t.url,
@@ -277,12 +280,15 @@ async function install(id, entry, source, onProgress) {
           expectedSha1: t.sha1 || '',
           expectZip: /\.(jar|zip)$/i.test(t.dest),
           retries: 1,
+          signal,
           onBytes: (n) => { bytes += n; emit(); },
         },
         source
       );
       if (r && r.skipped) skipped += 1;
     } catch (e) {
+      if (e && e.aborted) throw e;
+      if (signal && signal.aborted) { const e2 = new Error('已取消'); e2.aborted = true; throw e2; }
       logFn(`${t.kind === 'asset' ? '资源' : '文件'}下载失败：${t.name || path.basename(t.dest)} — ${e.message}`);
     }
     done += 1;
@@ -325,7 +331,7 @@ async function install(id, entry, source, onProgress) {
     if (before.missing.length) {
       logFn(`有 ${before.missing.length} 个文件没下完整，正在补全…`);
       const r = await repair.fix(mcDir, id, (p) =>
-        report({ stage: 'verify', message: `补全文件 ${p.done}/${p.total}`, percent: 99 })
+        report({ stage: 'verify', message: `补全文件 ${p.done}/${p.total}`, percent: 99 }), undefined, { signal }
       );
       if (r.remaining.length) {
         const sample = r.remaining.slice(0, 3).map((x) => x.name).join('、');

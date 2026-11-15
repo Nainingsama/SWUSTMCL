@@ -95,8 +95,18 @@ function readJson(file) {
 }
 
 /** 判断加载器类型（用于 UI 标签） */
-function loaderOf(id = '', mainClass = '') {
-  const s = `${id} ${mainClass}`.toLowerCase();
+function loaderOf(id = '', jsonOrMain = '') {
+  const mainClass = typeof jsonOrMain === 'string' ? jsonOrMain : (jsonOrMain && jsonOrMain.mainClass) || '';
+  let s = `${id} ${mainClass}`.toLowerCase();
+  // 新版 Forge / NeoForge 共用 BootstrapLauncher，必须再看依赖与参数里的包名
+  if (jsonOrMain && typeof jsonOrMain === 'object') {
+    try {
+      const libs = (jsonOrMain.libraries || []).map((l) => String((l && l.name) || '')).join(' ');
+      const args = JSON.stringify(jsonOrMain.arguments || '');
+      const inherits = String(jsonOrMain.inheritsFrom || '');
+      s += ' ' + libs.toLowerCase() + ' ' + args.toLowerCase() + ' ' + inherits.toLowerCase();
+    } catch {}
+  }
   // neoforge 必须在 forge 之前判断。注意：Forge 1.17+ 的 mainClass 也是
   // cpw.mods.bootstraplauncher.BootstrapLauncher，不能单凭 bootstraplauncher 判 NeoForge
   if (s.includes('neoforge') || s.includes('neoforged')) return 'NeoForge';
@@ -216,7 +226,7 @@ function listInstalled(gameDirs) {
         javaMajor: (json.javaVersion && json.javaVersion.majorVersion) || 8,
         mcVersion: guessMcVersion(id, json) || guessMcVersion(json.inheritsFrom, null) || pclMcVersion(instDir),
         inheritsFrom: json.inheritsFrom || '',
-        loader: loaderOf(id, json.mainClass),
+        loader: loaderOf(id, json),
         hasJar: fs.existsSync(path.join(instDir, `${id}.jar`)),
         isolated: dirsLib.isIsolatedInstance(instDir),
         displayName: (() => { try { return JSON.parse(fs.readFileSync(path.join(instDir, 'swustmcl-instance.json'), 'utf8')).displayName || ''; } catch { return ''; } })(),
@@ -227,6 +237,10 @@ function listInstalled(gameDirs) {
     }
   }
 
+  // 标记被其它实例继承的底座版本（loader 实例共同的 vanilla）
+  for (const v of out) {
+    v.inheritsCount = out.filter((o) => o.dir === v.dir && o.inheritsFrom === v.id).length;
+  }
   out.sort((a, b) => b.updatedAt - a.updatedAt);
   return out;
 }

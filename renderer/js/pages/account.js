@@ -457,7 +457,7 @@
         } catch (e) { window.Toast.error(e.message); }
       });
       if (isActive) card.classList.add('acct-active');
-      window.smcl.getAvatar(a.uuid, a.name).then((r) => window.SkinView.drawHead(canvas, r && r.dataUrl)).catch(() => {});
+      window.smcl.getAvatar(a.uuid, a.name, a.uid, true).then((r) => window.SkinView.drawHead(canvas, r && r.dataUrl)).catch(() => {});
       return card;
     }
   }

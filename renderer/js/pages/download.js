@@ -9,6 +9,15 @@
   let manifestData = null;
   let type = 'release';
   let query = '';
+  let shown = 0; // 分批渲染数量
+  const PAGE = 300;
+  // 官方愚人节快照（Mojang 清单里 type 也是 snapshot，需要单独识别）
+  const FOOLS = new Set([
+    '13w12~', '15w14a', '1.RV-Pre1', '16w14a', '3D Shareware v1.34', '17w13a', '18w11a',
+    '19w13a', '20w14infinite', '21w13a', '22w13oneblockatatime', '23w13a_or_b',
+    '24w14potato', '25w14craftmine',
+  ]);
+  const isFool = (v) => FOOLS.has(v.id) || /potato|craftmine|oneblockatatime|_or_b$/i.test(v.id);
   let manifestLoading = false;
 
   const installState = {}; // id -> {bar, meta}
@@ -20,11 +29,12 @@
     const search = h('input.input', {
       placeholder: '搜索版本号，如 1.21.2',
       style: { maxWidth: '240px' },
-      oninput: window.Dom.debounce((e) => { query = e.target.value.trim().toLowerCase(); drawRows(); }, 180),
+      oninput: window.Dom.debounce((e) => { query = e.target.value.trim().toLowerCase(); shown = 0; drawRows(); }, 180),
     });
     const seg = h('div.seg', null,
       segItem('release', '正式版'),
       segItem('snapshot', '快照'),
+      segItem('fools', '愚人节'),
       segItem('old', '旧版'),
       segItem('all', '全部'),
     );
@@ -32,6 +42,7 @@
       return h(`button.seg-item${t === type ? '.active' : ''}`, {
         onclick: (e) => {
           type = t;
+          shown = 0;
           seg.querySelectorAll('.seg-item').forEach((x) => x.classList.toggle('active', x === e.currentTarget));
           drawRows();
         },
@@ -75,9 +86,13 @@
     window.Dom.clear(list);
     let rows = manifestData.versions || [];
     if (type === 'old') rows = rows.filter((v) => v.type === 'old_beta' || v.type === 'old_alpha');
+    else if (type === 'fools') rows = rows.filter((v) => isFool(v));
     else if (type !== 'all') rows = rows.filter((v) => v.type === type);
     if (query) rows = rows.filter((v) => v.id.toLowerCase().includes(query));
-    rows = rows.slice(0, 600);
+    // 分批渲染，保证老版本（含早期愚人节快照）不会被截断
+    if (!shown) shown = PAGE;
+    const total = rows.length;
+    const pageRows = rows.slice(0, shown);
 
     const installed = window.Store.get('installed') || [];
     const installedIds = new Set(installed.map((v) => v.id));
@@ -86,8 +101,18 @@
       list.append(h('div.empty', null, h('div.empty-icon', null, '🔍'), '没有匹配的版本'));
       return;
     }
-    for (const v of rows) {
+    for (const v of pageRows) {
       list.append(rowOf(v, installedIds.has(v.id)));
+    }
+    if (total > pageRows.length) {
+      list.append(h('div', { style: { display: 'flex', justifyContent: 'center', padding: '12px 0 4px' } },
+        h('button.btn.btn-sm.pressable', {
+          onclick: () => { shown += PAGE; drawRows(); },
+        }, '加载更多（已显示 ' + pageRows.length + ' / ' + total + '）'),
+      ));
+    } else if (total > PAGE) {
+      list.append(h('div.faint', { style: { textAlign: 'center', padding: '10px 0', fontSize: '12px' } },
+        '共 ' + total + ' 个版本'));
     }
   }
 
@@ -264,6 +289,8 @@
   let manifest = null;
   let modalRef = null;
   let bodyEl = null;
+  let nextBtn = null;
+  const syncNext = () => { if (nextBtn) { const ok = canNext(); nextBtn.style.opacity = ok ? '' : '0.45'; nextBtn.style.pointerEvents = ok ? '' : 'none'; } };
   const STEPS = ['选择游戏版本', '选择加载器', '基本设置'];
 
   modalRef = window.Modal.open({
@@ -299,10 +326,10 @@
       h('button.btn.pressable', { onclick: () => modalRef.close(null) }, '取消'),
       h('span.spacer'),
       step > 1 ? h('button.btn.pressable', { onclick: () => { step -= 1; draw(); } }, '上一步') : null,
-      h('button.btn.btn-primary.pressable', {
+      (nextBtn = h('button.btn.btn-primary.pressable', {
         style: canNext() ? {} : { opacity: 0.45, pointerEvents: 'none' },
         onclick: () => { if (canNext()) next(); },
-      }, step === 3 ? '🚀 创建实例' : '下一步'),
+      }, step === 3 ? '🚀 创建实例' : '下一步')),
     ));
   }
 
@@ -402,6 +429,7 @@
                 sel.name = L_NAME(sel.loader) + '-' + l.version + '-' + sel.mc;
               }
               draw();
+              syncNext();
             },
           },
             h('div.grow', { style: { fontWeight: '600', fontSize: '13px' } }, l.version),
@@ -419,30 +447,48 @@
     };
     const L_NAME = (k) => k;
 
+    const avail = {}; // key -> true / false / null(未知)
     for (const L of LOADERS) {
-      const idx = LOADERS.indexOf(L);
       const card = h('div.wizard-loader' + (sel.loader === L.key ? '.chosen' : '') + (L.cls ? '.' + L.cls : ''), {
         onclick: () => {
+          if (avail[L.key] === false) {
+            window.Toast.warn('该 Minecraft 版本没有可用的 ' + L.name);
+            return;
+          }
           sel.loader = L.key;
           sel.loaderVer = null;
           if (L.key === 'vanilla') sel.name = sel.mc;
-          else if (!sel.name || sel.name.indexOf(LOADERS.some((x) => sel.name.indexOf(x.key) === 0) ? sel.name.slice(0, 6) : '') === 0) {
+          else if (!sel.name || sel.name.indexOf(L.key) === 0 || sel.name.indexOf(L.name) === 0) {
             sel.name = L.key + '-' + sel.mc;
           }
           grid.querySelectorAll('.wizard-loader').forEach((x) => x.classList.remove('chosen'));
           card.classList.add('chosen');
+          syncNext();
           drawVers();
         },
       },
         h('div.ver-icon.ver-icon-img', { innerHTML: window.LoaderIcon.svg(L.key, 30) }),
         h('div.grow', null,
           h('div', { style: { fontWeight: '650', fontSize: '13.5px' } }, L.name),
-          h('div.faint', null, L.desc),
+          h('div.faint.loader-desc', null, L.desc),
         ),
       );
       grid.append(card);
+      if (L.key === 'vanilla') { avail[L.key] = true; continue; }
+      // 按当前 MC 版本检测加载器是否可用（查不到 = 未知，保持可选）
+      window.smcl.listLoaders(L.key, sel.mc).then((list) => {
+        avail[L.key] = Array.isArray(list) && list.length > 0;
+        if (!avail[L.key]) {
+          card.classList.add('disabled');
+          card.title = '该版本没有 ' + L.name + ' 支持';
+          const desc = card.querySelector('.loader-desc');
+          if (desc) desc.textContent = '该版本不支持';
+          if (sel.loader === L.key) { sel.loader = 'vanilla'; sel.loaderVer = null; card.classList.remove('chosen'); syncNext(); drawVers(); }
+        }
+      }).catch(() => { avail[L.key] = null; });
     }
     if (sel.loader) drawVers();
+    syncNext();
   }
 
   function drawStep3(box) {

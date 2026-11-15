@@ -316,8 +316,35 @@ async function versions(source, projectId, q = {}) {
  * @returns {{items:[{url, filename, size, sha1, dir, dep}], missingDeps:[{projectId, reason}]}}
  */
 async function planInstall(payload) {
-  const { source, projectId, versionId, instance, dir: mcDir, type = 'mod' } = payload;
+  const { source, projectId, versionId, instance, dir: mcDirIn, type = 'mod' } = payload;
   const kind = PROJECT_TYPES[type] || PROJECT_TYPES.mod;
+
+  // 目录兜底：前端传来的目录可能不含该实例（跨目录同名实例 / 旧缓存），
+  // 在全部已配置游戏目录里找第一个真正存在版本 JSON 的
+  const candidates = [];
+  const pushDir = (p) => { if (p && !candidates.includes(path.resolve(p))) candidates.push(path.resolve(p)); };
+  pushDir(mcDirIn);
+  pushDir(settingsLib.all().mcDir);
+  try {
+    for (const d of require('./dirs').all(settingsLib.all())) pushDir(d.path);
+  } catch {}
+
+  let mcDir = candidates[0] || settingsLib.all().mcDir;
+  let meta = null;
+  const tried = [];
+  for (const d of candidates) {
+    try {
+      meta = versionLib.loadVersionJson(d, instance);
+      mcDir = d;
+      break;
+    } catch (e) {
+      tried.push(d);
+    }
+  }
+  if (!meta) {
+    throw new Error('实例「' + instance + '」的版本 JSON 缺失（已查找：' + tried.join('、') + '），请先在「版本管理」体检补全，或确认该实例目录');
+  }
+
   const instDir = safe.safeJoin(path.join(mcDir, 'versions'), instance);
   const targetDir = kind.dir ? path.join(instDir, kind.dir) : instDir;
 
@@ -328,7 +355,6 @@ async function planInstall(payload) {
     }
   } catch {}
 
-  const meta = versionLib.loadVersionJson(mcDir, instance);
   const gameVersion = versionLib.guessMcVersion(instance, meta);
 
   let items = [];
@@ -372,18 +398,20 @@ async function planInstall(payload) {
 }
 
 /** 执行安装（下载到实例目录），onProgress 汇报 */
-async function install(payload, onProgress) {
+async function install(payload, onProgress, opts = {}) {
   const plan = await planInstall(payload);
   const report = (p) => onProgress && onProgress(p);
   const results = [];
   for (const [i, item] of plan.items.entries()) {
     report({ stage: 'download', message: `下载 ${item.filename}（${i + 1}/${plan.items.length}）`, percent: Math.round((i / Math.max(1, plan.items.length)) * 100) });
     const dest = safe.safeJoin(item.dir, item.filename);
+    if (opts.signal && opts.signal.aborted) { const e = new Error('已取消'); e.aborted = true; throw e; }
     await net.download(item.url, dest, {
       expectedSize: item.size || 0,
       expectedSha1: item.sha1 || '',
       expectZip: /\.(jar|zip)$/i.test(dest),
       retries: 2,
+      signal: opts.signal,
     });
     results.push({ filename: item.filename, dep: item.dep, path: dest });
   }

@@ -43,7 +43,8 @@
       "renderer/**/*",
       "package.json",
       "LICENSE",
-      "build/icon.png"
+      "build/icon.png",
+      "CHANGELOG.md"
     ],
     "asar": true,
     "compression": "normal",

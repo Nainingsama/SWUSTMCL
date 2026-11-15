@@ -106,6 +106,7 @@ async function main() {
   copy(path.join(root, 'renderer'), path.join(appRoot, 'renderer'));
   copy(path.join(root, 'LICENSE'), path.join(appRoot, 'LICENSE'));
   copy(path.join(root, 'README.md'), path.join(appRoot, 'README.md'));
+  if (fs.existsSync(path.join(root, 'CHANGELOG.md'))) copy(path.join(root, 'CHANGELOG.md'), path.join(appRoot, 'CHANGELOG.md'));
   fs.writeFileSync(path.join(appRoot, 'package.json'), JSON.stringify({
     name: pkg.name,
     productName: pkg.productName,

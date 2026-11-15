@@ -6,7 +6,14 @@
   const { h, fmtSize, icon } = window.Dom;
 
   // ------------------------------------------------------------ 下拉浮层工具
+  let activeFloat = null; // 同一时间只允许一个浮层，避免重复点击叠加
   function openFloatPanel(anchor, panel, onClose) {
+    if (activeFloat) {
+      const sameAnchor = activeFloat.anchor === anchor;
+      try { activeFloat.close(); } catch {}
+      activeFloat = null;
+      if (sameAnchor) return () => {}; // 点同一个入口 = 收起
+    }
     panel.classList.add('float-panel');
     document.body.append(panel);
     const r = anchor.getBoundingClientRect();
@@ -20,8 +27,10 @@
     const close = () => {
       panel.remove();
       document.removeEventListener('mousedown', onDoc, true);
+      if (activeFloat && activeFloat.close === close) activeFloat = null;
       if (onClose) onClose();
     };
+    activeFloat = { anchor, close };
     const onDoc = (ev) => {
       if (!panel.contains(ev.target) && !anchor.contains(ev.target)) close();
     };
@@ -142,7 +151,7 @@
           h('div.faint', null, labelOf(a)),
         ),
       );
-      window.smcl.getAvatar(a.uuid, a.name).then((r) => window.SkinView.drawHead(canvas, r && r.dataUrl)).catch(() => {});
+      window.smcl.getAvatar(a.uuid, a.name, a.uid).then((r) => window.SkinView.drawHead(canvas, r && r.dataUrl)).catch(() => {});
       panel.append(row);
     }
     close = openFloatPanel(anchor, panel);
@@ -1065,11 +1074,41 @@
         )
       : h('div.card.announce-card', null,
           h('div.card-head', null, h('div.card-title', null, '公告')),
-          h('div.card-body', null,
-            h('div.banner.banner-info', null, '✦', h('div.grow', null, '星启 SWUSTMCL v1.0 发布 —— 欢迎通过「下载游戏」安装首个版本。')),
-            h('div.muted', null, '支持 PCL / HMCL 目录自动发现、版本隔离、正版与离线登录、整合包一键导入。'),
+          h('div.card-body.announce-body', null, h('div.muted', null, '正在读取更新日志…')),
+        );
+
+    // 公告内容：个人域显示最新更新日志（每次发版自动更新）
+    async function fillAnnounce() {
+      const bodyEl = announceCard.querySelector('.announce-body');
+      if (!bodyEl) return;
+      if (domainManaged) {
+        window.Dom.clear(bodyEl).append(
+          h('div.banner.banner-info', null, '✦', h('div.grow', null, domainAnnouncement || '域管理员还没有发布公告。')),
+          h('div.muted', null, '当前处于站点型域，服务器、资源与账号由该域管理。'),
+        );
+        return;
+      }
+      try {
+        const r = await window.smcl.releaseNotes();
+        if (!r || !r.ok) throw new Error('no notes');
+        const items = r.items.slice(0, 4).map((t) => (String(t).length > 56 ? String(t).slice(0, 56) + '…' : String(t)));
+        window.Dom.clear(bodyEl).append(
+          h('div.banner.banner-info.announce-head', null, '✦',
+            h('div.grow', null,
+              h('div', { style: { fontWeight: '650' } }, 'v' + r.version + ' 更新'),
+              r.date ? h('div.announce-date', null, r.date) : null,
+            )),
+          h('div.col.announce-list', null,
+            ...items.map((t) => h('div.announce-item', { title: t }, '· ' + t)),
           ),
         );
+      } catch {
+        window.Dom.clear(bodyEl).append(
+          h('div.banner.banner-info', null, '✦', h('div.grow', null, '欢迎使用星启 SWUSTMCL')),
+          h('div.muted', null, '更新日志暂不可用，可前往 GitHub Releases 查看。'),
+        );
+      }
+    }
 
     // ---- 组件化首页：卡片可拖拽 / 缩放 / 刷新，互不重叠，页面可滚动 ----
     const srvCard = serverCard();
@@ -1080,12 +1119,13 @@
       { id: 'running', title: '运行状态', card: runningCard, hidden: !s.gameRunning },
       { id: 'servers', title: '服务器', card: srvCard, refresh: () => srvCard.__refresh && srvCard.__refresh() },
       { id: 'calendar', title: '日历', card: calCard, refresh: () => calCard.__refresh && calCard.__refresh() },
-      { id: 'announce', title: '公告', card: announceCard, refresh: domainManaged ? () => {} : () => renderBanners(banners) },
+      { id: 'announce', title: '公告', card: announceCard, refresh: () => fillAnnounce() },
       { id: 'clock', title: '时钟', card: clockCard(), refresh: () => {} },
     ];
     const canvas = h('div.home-canvas.mt-12');
     root.append(banners, canvas);
     const holderMap = mountWidgets(canvas, widgets);
+    fillAnnounce();
     els.canvas = canvas;
     els.runningWidget = holderMap.running;
 

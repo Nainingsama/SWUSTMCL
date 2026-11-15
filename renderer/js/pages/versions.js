@@ -79,7 +79,13 @@
     const side = rootEl && rootEl.querySelector('#verSide');
     const mainEl = rootEl && rootEl.querySelector('#verMain');
     if (!side || !mainEl) return;
-    const all = installedSorted();
+    let all = installedSorted();
+    // 默认隐藏只作为底座的版本（被其它实例 inheritsFrom 引用），可点工具栏「底座」显示
+    const showBases = localStorage.getItem('swustmcl.showBases') === '1';
+    if (!showBases) {
+      const keep = new Set([selectedId, window.Store.get('homeVersionId')].filter(Boolean));
+      all = all.filter((v) => !v.inheritsCount || keep.has(v.id));
+    }
     if (selectedId && !all.some((v) => v.id === selectedId)) selectedId = '';
 
     // ---------- 左：实例列表 ----------
@@ -278,6 +284,16 @@
         h('div.ver-title-lg', null, '全部实例'),
         h('span.spacer'),
         searchInp,
+        h('button.btn.btn-ghost.btn-xs.pressable', {
+          title: '显示/隐藏被其它实例继承的底座版本',
+          style: localStorage.getItem('swustmcl.showBases') === '1' ? { opacity: 1 } : { opacity: 0.6 },
+          onclick: (e) => {
+            const on = localStorage.getItem('swustmcl.showBases') === '1';
+            localStorage.setItem('swustmcl.showBases', on ? '0' : '1');
+            e.currentTarget.style.opacity = on ? '0.6' : '1';
+            drawAll();
+          },
+        }, '底座'),
         h('button.iconbtn', { title: '刷新', onclick: async () => { try { await window.app.refreshInstalled(); window.Toast.success('已刷新'); } catch {} } }, svgIcon('refresh', 16)),
         sortSel,
         viewSeg,
@@ -336,7 +352,7 @@
     const isSel = v.id === (window.Store.get('homeVersionId') || '');
     return h('div.card.hoverable.ver-tile' + (isSel ? '.selected' : ''), {
       onclick: () => { window.Store.set({ homeVersionId: v.id }); drawAll(); },
-      ondblclick: () => launchOne(v),
+      ondblclick: (e) => { if (e.target.closest('button, a, input, select')) return; launchOne(v); },
     },
       h('span.inst-radio' + (isSel ? '.on' : ''), { style: { position: 'absolute', left: '12px', top: '12px' } }),
       h('button.iconbtn', { title: '更多操作', style: { position: 'absolute', right: '8px', top: '8px' }, onclick: (e) => { e.stopPropagation(); openInstanceMenu(v, e.currentTarget); } }, '…'),
@@ -356,7 +372,7 @@
     const isSel = v.id === (window.Store.get('homeVersionId') || '');
     return h('div.ver-row' + (isSel ? '.selected' : ''), {
       onclick: () => { window.Store.set({ homeVersionId: v.id }); drawAll(); },
-      ondblclick: () => launchOne(v),
+      ondblclick: (e) => { if (e.target.closest('button, a, input, select')) return; launchOne(v); },
     },
       h('span.inst-radio' + (isSel ? '.on' : '')),
       h('span.loader-mini', { style: { width: '24px', flex: 'none' }, innerHTML: window.LoaderIcon.svg(v.loader, 22) }),

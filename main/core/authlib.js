@@ -101,10 +101,11 @@ async function login(rootUrl, username, password) {
 }
 
 /** 多角色时切换/选定角色（refresh 带上 selectedProfile） */
-async function selectProfile(rootUrl, accessToken, profileId) {
+async function selectProfile(rootUrl, accessToken, profileId, clientToken) {
   const root = normalizeRoot(rootUrl);
   const r = await postJson(`${root}/authserver/refresh`, {
     accessToken,
+    ...(clientToken ? { clientToken } : {}),
     selectedProfile: { id: profileId },
   });
   const j = r.json;

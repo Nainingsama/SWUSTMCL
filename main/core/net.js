@@ -7,6 +7,7 @@ const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const crypto = require('crypto');
+const log = require('./log');
 
 // HTTP 头只能是 ByteString：UA 不能带中文（星启 → XingQi）
 const UA = 'SWUSTMCL/1.0 (XingQi; Electron)';
@@ -110,7 +111,13 @@ async function fetchJson(url, { timeout = 25000, retries = 2, raw = false, heade
         headers: { 'User-Agent': UA, Accept: raw ? '*/*' : 'application/json', ...headers },
         signal: AbortSignal.timeout(timeout),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const e = new Error(`HTTP ${res.status}`);
+        e.status = res.status;
+        // 5xx 只重试一次，之后立即放弃这个地址，让上层换镜像/跳过，避免长时间卡住
+        if (res.status >= 500 && attempt >= 1) e.noRetry = true;
+        throw e;
+      }
       return raw ? await res.text() : await res.json();
     } catch (e) {
       lastErr = e;
@@ -182,6 +189,15 @@ async function download(url, dest, opts = {}) {
     minBytes = 0,
     headers = {},
   } = opts;
+  const extSignal = opts.signal || null;
+  const throwIfAborted = () => {
+    if (extSignal && extSignal.aborted) {
+      const e = new Error('已取消');
+      e.aborted = true;
+      e.noRetry = true;
+      throw e;
+    }
+  };
   const want1 = String(expectedSha1 || '').toLowerCase();
   const want256 = String(expectedSha256 || '').toLowerCase();
 
@@ -201,16 +217,28 @@ async function download(url, dest, opts = {}) {
   await fsp.mkdir(path.dirname(dest), { recursive: true });
   const tmp = `${dest}.part`;
 
+  // 断点续传：已有 .part 就先接着下（慢速 CDN 卡顿后不用从头来）
+  let resumeFrom = 0;
+  try {
+    const st = await fsp.stat(tmp);
+    if (st.isFile() && st.size > 0 && (!expectedSize || st.size < expectedSize)) resumeFrom = st.size;
+  } catch {}
+
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
+    throwIfAborted();
     // 超时模型：timeout 只管「建立连接 + 等到响应头」；传输阶段改用「空闲超时」
     // （X 秒没有任何数据到达才中断），大文件慢速下载不再被整体超时反复掐断。
     const controller = new AbortController();
+    if (extSignal) {
+      const onAbort = () => controller.abort(new Error('已取消'));
+      if (extSignal.aborted) onAbort(); else extSignal.addEventListener('abort', onAbort, { once: true });
+    }
     let connectTimer = setTimeout(() => controller.abort(new Error('connect timeout')), timeout);
     let idleTimer = null;
     const armIdle = () => {
       if (idleTimer) clearTimeout(idleTimer);
-      idleTimer = setTimeout(() => controller.abort(new Error('stall (no data)')), Math.max(timeout, 20000));
+      idleTimer = setTimeout(() => controller.abort(new Error('stall (no data)')), Number(opts.idleTimeout) || Math.max(timeout, 20000));
     };
     try {
       const t0 = Date.now();
@@ -221,11 +249,13 @@ async function download(url, dest, opts = {}) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       armIdle(); // 响应头已到，切到空闲超时
 
-      const handle = await fsp.open(tmp, 'w');
-      let received = 0;
+      const append = resumeFrom > 0 && res.status === 206;
+      const handle = await fsp.open(tmp, append ? 'a' : 'w');
+      let received = append ? resumeFrom : 0;
       try {
         const reader = res.body.getReader();
         for (;;) {
+          throwIfAborted();
           const { done, value } = await reader.read();
           armIdle(); // 每收到数据重置空闲计时
           if (done) break;
@@ -257,8 +287,19 @@ async function download(url, dest, opts = {}) {
       if (opts.onOk) opts.onOk();
       return { size: received, skipped: false };
     } catch (e) {
+      // 外部取消：不要包成下载失败，保留 aborted 标记供上层清理
+      if (e && (e.aborted || (extSignal && extSignal.aborted))) {
+        try { await fsp.unlink(tmp); } catch {}
+        const e2 = new Error('已取消');
+        e2.aborted = true;
+        throw e2;
+      }
       lastErr = e;
-      try { await fsp.unlink(tmp); } catch {}
+      // 保留已下载部分用于续传；只有内容级错误才删除
+      try {
+        if (e && e.noRetry) await fsp.unlink(tmp);
+        else { const st = await fsp.stat(tmp); resumeFrom = st.size || 0; }
+      } catch {}
       if (e && e.noRetry) break; // 4xx / 内容级错误：重试同一地址无意义
       if (attempt < retries) await sleep(500 * (attempt + 1));
     } finally {
@@ -286,21 +327,26 @@ async function download(url, dest, opts = {}) {
  */
 async function downloadLarge(url, dest, opts = {}) {
   const total = Number(opts.expectedSize) || 0;
+  const extSignal = opts.signal || null;
   if (total < 8 * 1024 * 1024) return download(url, dest, opts);
+  if (extSignal && extSignal.aborted) { const e = new Error('已取消'); e.aborted = true; throw e; }
 
   await fsp.mkdir(path.dirname(dest), { recursive: true }); // 目录可能还不存在（新库目录）
 
-  const parts = Math.min(6, Math.max(2, Math.ceil(total / (4 * 1024 * 1024))));
+  const parts = Math.min(16, Math.max(4, Math.ceil(total / (1536 * 1024))));
   const slice = Math.ceil(total / parts);
   const tmpParts = [];
   const errors = [];
+  let receivedBytes = 0;
   let rangeUnsupported = false;
 
   const cleanup = async () => {
     for (const p of tmpParts) { try { await fsp.unlink(p); } catch {} }
   };
 
+  try {
   await pool(Array.from({ length: parts }, (_, i) => i), parts, async (i) => {
+    if (extSignal && extSignal.aborted) { const e = new Error('已取消'); e.aborted = true; throw e; }
     if (rangeUnsupported) return;
     const start = i * slice;
     const end = Math.min(total, start + slice) - 1;
@@ -310,7 +356,9 @@ async function downloadLarge(url, dest, opts = {}) {
     for (let attempt = 0; attempt < 2 && got !== end - start + 1; attempt++) {
       try {
         const controller = new AbortController();
-        let idle = setTimeout(() => controller.abort(new Error('stall')), 20000);
+        if (extSignal) { const onAbort = () => controller.abort(new Error('已取消')); if (extSignal.aborted) onAbort(); else extSignal.addEventListener('abort', onAbort, { once: true }); }
+        const idleMs = Math.max(20000, Number(opts.idleTimeout) || 0); // 分片握手慢，给 20 秒
+        let idle = setTimeout(() => controller.abort(new Error('stall')), idleMs);
         const res = await fetch(url, {
           headers: { 'User-Agent': UA, Range: `bytes=${start}-${end}`, ...(opts.headers || {}) },
           signal: controller.signal,
@@ -323,10 +371,11 @@ async function downloadLarge(url, dest, opts = {}) {
         try {
           for (;;) {
             const { done, value } = await reader.read();
-            idle = setTimeout(() => controller.abort(new Error('stall')), 20000);
+            idle = setTimeout(() => controller.abort(new Error('stall')), idleMs);
             if (done) break;
             await handle.write(value, 0, value.length, got); // 分片内相对偏移，合并时按顺序拼接
             got += value.length;
+            receivedBytes += value.length;
             if (opts.onBytes) opts.onBytes(value.length);
           }
         } finally {
@@ -334,11 +383,19 @@ async function downloadLarge(url, dest, opts = {}) {
           await handle.close();
         }
       } catch (e) {
+        if (e && /已取消/.test(e.message) || (extSignal && extSignal.aborted)) { const e2 = new Error('已取消'); e2.aborted = true; throw e2; }
         if (rangeUnsupported) return;
+        // 首次尝试一个字节都没收到：视为死链，不再重试
+        if (got === 0 && /stall|timeout|abort|已取消/i.test(String(e.message))) { errors.push(`分片${i}: ${e.message}`); return; }
         if (attempt === 1) errors.push(`分片${i}: ${e.message}`);
       }
     }
   });
+
+  } catch (e) {
+    await cleanup();
+    throw e;
+  }
 
   if (rangeUnsupported) {
     await cleanup();
@@ -346,7 +403,12 @@ async function downloadLarge(url, dest, opts = {}) {
   }
   if (errors.length) {
     await cleanup();
-    throw new Error(`分片下载失败 — ${errors.join('; ')}`);
+    // 只有确实收到过数据（说明线路只是慢）才退回单连接；全 0 字节说明地址坏/卡死，直接失败
+    if (receivedBytes > 0) {
+      try { log.warn('分片下载失败，退回单连接重试：' + errors[0]); } catch {}
+      return download(url, dest, { ...opts, signal: extSignal });
+    }
+    throw new Error('分片下载失败 — ' + errors.join('; '));
   }
 
   // 合并

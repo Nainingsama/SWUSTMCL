@@ -11,7 +11,11 @@
   let sourceFilter = 'all';
 
   function tasks() {
-    return Object.values(window.Store.get('taskMap') || {});
+    const live = Object.values(window.Store.get('taskMap') || {});
+    let hist = [];
+    try { hist = JSON.parse(localStorage.getItem('swustmcl.taskHistory') || '[]'); } catch {}
+    const seen = new Set(live.map((t) => t.name + '@' + t.start));
+    return [...live, ...hist.filter((t) => !seen.has(t.name + '@' + t.start))];
   }
 
   function render(root) {
@@ -99,6 +103,7 @@
       h('div.row', null,
         h('span.badge.badge-blue', null, t.source),
         h('div.grow.ellipsis', { style: { fontWeight: '650', fontSize: '13.5px' } }, t.name),
+        running && t.cancelKey ? h('button.btn.btn-ghost.btn-xs.pressable', { onclick: async (e) => { e.stopPropagation(); try { await window.smcl.cancelTask(t.cancelKey); window.Toast.info('已取消：' + t.name); } catch (err) { window.Toast.error(String(err.message || err)); } } }, '取消') : null,
         running ? h('span.pulse-dot') : h('span.badge.' + (t.status === 'failed' ? 'badge-red' : 'badge-green'), null, t.status === 'failed' ? '失败' : '完成'),
       ),
       bar,

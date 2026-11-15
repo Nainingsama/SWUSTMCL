@@ -22,6 +22,7 @@
     drop.addEventListener('dragleave', () => drop.classList.remove('dragover'));
     drop.addEventListener('drop', (e) => {
       e.preventDefault();
+      e.stopPropagation();
       drop.classList.remove('dragover');
       const f = e.dataTransfer.files && e.dataTransfer.files[0];
       if (f && /\.(zip|mrpack)$/i.test(f.name)) pickPath(window.smcl.pathForFile ? window.smcl.pathForFile(f) : f.path);
@@ -138,7 +139,7 @@
 
     try {
       // 自定义实例名：写入待导入信息（主进程会用同名自动改名逻辑兜底）
-      const r = await window.smcl.installPack(inspecting.file);
+      const r = await window.smcl.installPack(inspecting.file, customName);
       window.Toast.success(`导入完成：${r.id}${r.warnings && r.warnings.length ? `（${r.warnings.length} 个警告）` : ''}`);
       if (r.warnings && r.warnings.length) {
         window.Modal.open({

@@ -98,6 +98,7 @@ const core = {
   gpu: require('./core/gpu'),
   compat: require('./core/compat'),
   memory: require('./core/memory'),
+  releasenotes: require('./core/releasenotes'),
   javainstall: require('./core/javainstall'),
   accountstore: require('./core/accountstore'),
   instances: require('./core/instances'),
@@ -167,6 +168,21 @@ if (settingsLib.all().autoFixInjectors !== false) {
 
 const gameProcs = new Map(); // 多开：sessionId -> { id, dir, start, proc }
 let busy = { install: null, modpack: null, loader: null, content: null, update: null };
+const taskControllers = new Map(); // key -> AbortController
+function startTask(key) {
+  const ctl = new AbortController();
+  taskControllers.set(key, ctl);
+  return ctl;
+}
+function endTask(key) { taskControllers.delete(key); }
+ipcMain.handle('task:cancel', (_e, payload) => {
+  const key = String((payload && payload.key) || '');
+  const ctl = taskControllers.get(key);
+  if (!ctl) return { ok: false };
+  try { ctl.abort(); } catch {}
+  log.info('已请求取消任务：' + key);
+  return { ok: true };
+});
 let latestReleaseCache = null;
 
 const isDev = !app.isPackaged || process.argv.includes('--dev');
@@ -391,6 +407,34 @@ app.on('open-url', (event, url) => {
 });
 
 app.whenReady().then(async () => {
+  // 清理上次未完成的整合包导入目录（标记文件存在 = 那次导入没有成功收尾）
+  try {
+    for (const d of core.dirs.all(settingsLib.all())) {
+      const vroot = path.join(d.path, 'versions');
+      for (const name of fs.readdirSync(vroot).slice(0, 500)) {
+        const inst = path.join(vroot, name);
+        if (!fs.existsSync(path.join(inst, '.swustmcl-importing'))) continue;
+        try {
+          fs.rmSync(inst, { recursive: true, force: true });
+          log.info('已清理未完成的导入目录：' + inst);
+        } catch (e) { log.warn('清理未完成的导入目录失败：' + inst + ' — ' + e.message); }
+      }
+    }
+  } catch {}
+  // 一次性清理旧版按「玩家名」命名的头像缓存（同名账户会互相串皮肤）
+  try {
+    const flag = path.join(app.getPath('userData'), 'avatar-clean-v3.flag');
+    if (!fs.existsSync(flag)) {
+      const dir = path.join(app.getPath('userData'), 'avatars');
+      for (const f of fs.readdirSync(dir)) {
+        if (f.endsWith('.png')) {
+          try { fs.unlinkSync(path.join(dir, f)); } catch {}
+        }
+      }
+      fs.writeFileSync(flag, new Date().toISOString(), 'utf8');
+      log.info('已清空头像缓存（重新按账户拉取皮肤）');
+    }
+  } catch {}
   wall.registerHandler();
   // 便携目录：旧版本默认把游戏装到 %APPDATA%\.minecraft，这里一次性改到启动器同目录
   try {
@@ -473,6 +517,29 @@ app.whenReady().then(async () => {
     }, 2500);
   }
 });
+
+// ---------- 实例目录监听：外部删除/新增版本后自动刷新列表 ----------
+let versionWatchers = [];
+let versionWatchTimer = null;
+function watchVersionDirs() {
+  for (const w of versionWatchers) { try { w.close(); } catch {} }
+  versionWatchers = [];
+  try {
+    for (const d of gameDirs()) {
+      const vroot = path.join(d.path, 'versions');
+      try {
+        const w = fs.watch(vroot, { persistent: false }, () => {
+          if (versionWatchTimer) clearTimeout(versionWatchTimer);
+          versionWatchTimer = setTimeout(() => {
+            versionWatchTimer = null;
+            try { send('versions:changed'); } catch {}
+          }, 400);
+        });
+        versionWatchers.push(w);
+      } catch {}
+    }
+  } catch {}
+}
 
 app.on('window-all-closed', () => {
   // 关闭启动器不结束正在运行的游戏窗口
@@ -899,6 +966,15 @@ function focusGameWindow(tries = 6) {
 }
 
 ipcMain.handle('game:launch', async (_e, payload) => {
+  const ctl = startTask('launch');
+  try {
+    return await launchGame(payload, ctl.signal);
+  } finally {
+    endTask('launch');
+  }
+});
+
+async function launchGame(payload, signal) {
   const id = core.safe.assertVersionId(String((payload && payload.id) || ''));
   const dir = String((payload && payload.dir) || '');
   const joinServer = payload && payload.server && payload.server.host ? { host: String(payload.server.host), port: Number(payload.server.port) || 25565 } : null;
@@ -925,11 +1001,11 @@ ipcMain.handle('game:launch', async (_e, payload) => {
     const pre = core.repair.check(dir, id);
     if (!pre.ok) {
       log.info(`启动前体检：缺 ${pre.missing.length} 个文件，自动补全…`);
-      send('install:progress', { id, stage: 'preflight', message: '启动前补全缺失依赖…', percent: 1 });
+      send('install:progress', { id, stage: 'preflight', cancelKey: 'launch', message: '启动前补全缺失依赖…', percent: 1 });
       await core.repair.fix(dir, id, (p) => {
-        const pct = Math.min(99, Math.round((p.done / Math.max(1, p.total)) * 100));
-        send('install:progress', { id, stage: 'preflight', message: `补全依赖 ${p.done}/${p.total}`, percent: pct });
-      }, s.downloadSource === 'bmcl' ? 'bmcl' : 'mojang');
+        const pct = Math.max(1, Math.min(99, Math.round((p.done / Math.max(1, p.total)) * 100)));
+        send('install:progress', { id, stage: 'preflight', cancelKey: 'launch', message: `补全依赖 ${p.done}/${p.total}`, percent: pct });
+      }, s.downloadSource === 'bmcl' ? 'bmcl' : 'mojang', { signal });
       const after = core.repair.check(dir, id);
       if (!after.ok) {
         throw new Error(`实例依赖不完整（仍缺 ${after.missing.length} 个文件），自动补全未成功——请到「版本管理 → 体检」检查网络后重试`);
@@ -937,6 +1013,7 @@ ipcMain.handle('game:launch', async (_e, payload) => {
       send('install:progress', { id, stage: 'done', message: '依赖已补全', percent: 100 });
     }
   } catch (e) {
+    if (e && e.aborted) throw new Error('已取消启动');
     if (String(e.message).includes('实例依赖不完整')) throw e;
     log.warn('启动前体检失败（不阻塞启动）：' + e.message);
   }
@@ -1045,7 +1122,7 @@ ipcMain.handle('game:launch', async (_e, payload) => {
   send('game:started', { id, pid: proc.pid, gameDir: proc.gameDir, isolated: proc.isolated, running: gameProcs.size });
   try { focusGameWindow(); } catch {}
   return { ok: true, pid: proc.pid, isolated: proc.isolated };
-});
+}
 
 ipcMain.handle('game:kill', async (_e, payload) => {
   const wantPid = Number(payload && payload.pid) || 0;
@@ -1139,11 +1216,17 @@ ipcMain.handle('modpack:inspect', (_e, payload) => {
 ipcMain.handle('modpack:install', async (_e, payload) => {
   const file = String((payload && payload.file) || '');
   const info = core.modpack.inspect(file);
+  const customName = String((payload && payload.name) || '').trim();
+  if (customName) info.name = customName; // 预览里改的实例名要生效
   requireIdle('modpack', '整合包导入');
   busy.modpack = info.name;
+  const ctl = startTask('modpack');
+  let createdDir = '';
   try {
     const r = await core.modpack.importPack(file, info, {
-      onProgress: (p) => send('modpack:progress', { name: info.name, ...p }),
+      signal: ctl.signal,
+      onInstance: (_id, dir) => { createdDir = dir; },
+      onProgress: (p) => send('modpack:progress', { name: info.name, cancelKey: 'modpack', ...p }),
       installVanilla: async (mc, onProgress) => {
         const manifest = await core.versions.getManifest();
         const entry = (manifest.versions || []).find((v) => v.id === mc);
@@ -1160,8 +1243,19 @@ ipcMain.handle('modpack:install', async (_e, payload) => {
       r.dependencies = { ok: c.ok, missing: c.missing.length };
     }
     return r;
+  } catch (e) {
+    // 导入失败/取消：清掉这次新建的半成品实例目录，避免留下 26.3-BINGO / (2)
+    if (createdDir) {
+      for (let i = 0; i < 5; i++) {
+        try { fs.rmSync(createdDir, { recursive: true, force: true }); break; } catch { await new Promise((r) => setTimeout(r, 250)); }
+      }
+      log.info('已清理失败的整合包实例目录：' + createdDir);
+    }
+    if (e && e.aborted) throw new Error('已取消导入');
+    throw e;
   } finally {
     busy.modpack = null;
+    endTask('modpack');
   }
 });
 
@@ -1210,10 +1304,16 @@ ipcMain.handle('content:versions', (_e, payload) => core.content.versions(payloa
 ipcMain.handle('content:install', async (_e, payload) => {
   requireIdle('content', '资源安装');
   busy.content = payload.projectId;
+  const ctl = startTask('content');
   try {
-    return await core.content.install(payload, (p) => send('content:progress', { projectId: payload.projectId, source: payload.source, ...p }));
+    return await core.content.install(
+      payload,
+      (p) => send('content:progress', { projectId: payload.projectId, source: payload.source, cancelKey: 'content', ...p }),
+      { signal: ctl.signal },
+    );
   } finally {
     busy.content = null;
+    endTask('content');
   }
 });
 
@@ -1286,11 +1386,16 @@ ipcMain.handle('accounts:switch', async (_e, payload) => {
         const np = { ...entry.payload, accessToken: rr.accessToken, selected: rr.selected, skinUrl: (rr.selected && rr.selected.skinUrl) || '' };
         core.accountstore.upsert({ ...entry, payload: np });
         settingsLib.setSecret('authlib', np);
-        if (entry.uuid) core.account.clearAvatarCache(entry.uuid, entry.name);
+        core.account.clearAvatarCache(entry.uuid, entry.name, entry.uid);
       } catch {}
     }
   }
   core.accountstore.setActive(uid);
+  // 切换时清掉该账户的头像缓存，确保新皮肤立刻生效（缓存键可能是 uid / uuid / name）
+  try {
+    core.account.clearAvatarCache(entry.uuid, entry.name, entry.uid);
+    if (entry.uuid) core.account.clearAvatarCache(entry.uuid, entry.name);
+  } catch {}
   log.info('已切换账户：' + entry.name);
   return core.account.accountState();
 });
@@ -1338,13 +1443,57 @@ ipcMain.handle('avatar:get', async (_e, payload) => {
   const uuid = String((payload && payload.uuid) || '');
   const name = String((payload && payload.name) || '');
   const force = Boolean(payload && payload.force);
-  // 从账户库找到该角色保存的皮肤直链（登录/换角色时解析）
+  const uid = String((payload && payload.uid) || '');
+  // 找到对应账户条目：皮肤直链 + 缓存键 + 是否允许本地皮肤
   let hintSkinUrl = '';
+  let entry = null;
   try {
-    const entry = core.accountstore.read().list.find((a) => a.type === 'authlib' && ((a.uuid && a.uuid === uuid) || (a.name && a.name === name)));
-    hintSkinUrl = (entry && entry.payload && entry.payload.skinUrl) || '';
+    const list = core.accountstore.read().list;
+    entry = (uid && list.find((a) => a.uid === uid))
+      || list.find((a) => (a.uuid && a.uuid === uuid) || (a.name && a.name === name))
+      || null;
+    hintSkinUrl = (entry && entry.payload && (entry.payload.skinUrl || (entry.payload.selected && entry.payload.selected.skinUrl))) || '';
+    // 微软账户：令牌临近过期时自动续期，并用新令牌里的皮肤地址
+    if (entry && entry.type === 'msa' && entry.payload) {
+      const exp = Number(entry.payload.expiresAt) || 0;
+      if (exp && exp < Date.now() + 60000) {
+        try {
+          const token = await core.account.ensureFreshToken();
+          if (token) {
+            hintSkinUrl = (token.skins && token.skins[0] && token.skins[0].url) || hintSkinUrl;
+            core.accountstore.upsert({ ...entry, payload: { ...entry.payload, ...token } });
+            force = true;
+          }
+        } catch (e) { log.warn('微软令牌续期失败（头像）：' + e.message); }
+      } else if (entry.payload.skins && entry.payload.skins[0]) {
+        hintSkinUrl = hintSkinUrl || entry.payload.skins[0].url || '';
+      }
+    }
+
+    // 皮肤站账户：老数据没有保存 skinUrl，用该账户自己的 accessToken 解析一次并回写
+    if (!hintSkinUrl && entry && entry.type === 'authlib' && entry.payload) {
+      const p = entry.payload;
+      const sel = p.selected || (Array.isArray(p.profiles) && (p.profiles.find((x) => x && x.id === uuid) || p.profiles[0])) || (uuid ? { id: uuid, name } : null);
+      if (sel && sel.skinUrl) hintSkinUrl = sel.skinUrl;
+      if (!hintSkinUrl && p.root && p.accessToken && sel && sel.id) {
+        try {
+          const rr = await core.authlib.selectProfile(p.root, p.accessToken, sel.id, p.clientToken);
+          hintSkinUrl = (rr && rr.selected && rr.selected.skinUrl) || '';
+          if (hintSkinUrl) {
+            core.accountstore.upsert({ ...entry, payload: { ...p, accessToken: rr.accessToken || p.accessToken, selected: rr.selected, skinUrl: hintSkinUrl } });
+          }
+        } catch {}
+      }
+    }
   } catch {}
-  const r = await core.account.fetchSkinTexture(uuid, name, force, hintSkinUrl);
+  if (entry && entry.type === 'authlib' && !hintSkinUrl) {
+    log.warn('皮肤站头像缺少直链：uid=' + uid + ' root=' + ((entry.payload && entry.payload.root) || '-') + ' 有token=' + Boolean(entry.payload && entry.payload.accessToken) + ' 有selected=' + Boolean(entry.payload && entry.payload.selected));
+  }
+  const r = await core.account.fetchSkinTexture(uuid, name, force, hintSkinUrl, {
+    key: (entry && entry.uid) || '',
+    allowLocalSkin: !entry || entry.type === 'offline',
+    authlibRoot: (entry && entry.type === 'authlib' && entry.payload && entry.payload.root) || '',
+  });
   return { file: r.file, dataUrl: r.dataUrl, cached: r.cached };
 });
 
@@ -1619,6 +1768,9 @@ ipcMain.handle('domains:installResource', async (_e, payload) => {
 ipcMain.handle('history:list', () => core.history.read());
 ipcMain.handle('log:instance', (_e, payload) => core.instancelog.tail(String((payload && payload.id) || ''), Number((payload && payload.lines) || 500)));
 ipcMain.handle('log:instance:clear', (_e, payload) => core.instancelog.clear(String((payload && payload.id) || '')));
+
+// ---------- 更新日志（公告卡片）----------
+ipcMain.handle('app:release-notes', () => core.releasenotes.latest());
 
 // ---------- 关闭确认（渲染层主题化弹窗）
 const mwState = { allowClose: false, promptAt: 0 };

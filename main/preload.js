@@ -72,7 +72,7 @@ contextBridge.exposeInMainWorld('smcl', {
   // 整合包
   pickPack: () => ipcRenderer.invoke('modpack:pick'),
   inspectPack: (file) => ipcRenderer.invoke('modpack:inspect', { file }),
-  installPack: (file) => ipcRenderer.invoke('modpack:install', { file }),
+  installPack: (file, name) => ipcRenderer.invoke('modpack:install', { file, name: name || '' }),
   onPack: (cb) => on('modpack:progress', cb),
   exportPlan: (id, dir) => ipcRenderer.invoke('pack:exportPlan', { id, dir }),
   exportPick: (defaultName) => ipcRenderer.invoke('pack:exportPick', { defaultName }),
@@ -99,7 +99,7 @@ contextBridge.exposeInMainWorld('smcl', {
   accountsSwitch: (uid) => ipcRenderer.invoke('accounts:switch', { uid }),
   accountsAddOffline: (name) => ipcRenderer.invoke('accounts:addOffline', { name }),
   accountsRemove: (uid) => ipcRenderer.invoke('accounts:remove', { uid }),
-  getAvatar: (uuid, name, force) => ipcRenderer.invoke('avatar:get', { uuid, name, force }), // => {file, dataUrl, cached}
+  getAvatar: (uuid, name, uid, force) => ipcRenderer.invoke('avatar:get', { uuid, name, uid: uid || '', force }), // => {file, dataUrl, cached}
   skinImport: () => ipcRenderer.invoke('skin:import'),
   skinClear: () => ipcRenderer.invoke('skin:clear'),
   skinLocal: (name) => ipcRenderer.invoke('skin:local', { name }),
@@ -160,6 +160,9 @@ contextBridge.exposeInMainWorld('smcl', {
   // 显卡
   applyGpuAll: (mode) => ipcRenderer.invoke('gpu:applyAll', { mode }),
   gpuStatus: () => ipcRenderer.invoke('gpu:status'),
+  releaseNotes: () => ipcRenderer.invoke('app:release-notes'),
+  cancelTask: (key) => ipcRenderer.invoke('task:cancel', { key }),
+  onVersionsChanged: (cb) => on('versions:changed', cb),
 
   // 内存
   freeMemory: () => ipcRenderer.invoke('memory:free'),

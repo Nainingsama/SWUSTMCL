@@ -347,14 +347,30 @@
 
     // ---------- 全局下载任务卡（类似 PCL 的悬浮进度） ----------
     const TaskCard = {
-      show(name) {
+      cancelKey: '',
+      show(name, cancelKey) {
         const c = document.getElementById('taskCard');
+        this.cancelKey = cancelKey || '';
+        const cb = document.getElementById('taskCancel');
+        if (cb) {
+          cb.hidden = !this.cancelKey;
+          cb.disabled = false;
+          cb.textContent = '取消';
+          cb.onclick = async (e) => {
+            e.stopPropagation();
+            if (cb.disabled) return;
+            cb.disabled = true;
+            cb.textContent = '取消中…';
+            try { await window.smcl.cancelTask(this.cancelKey); window.Toast.info('正在取消…'); } catch (err) { window.Toast.error(String(err.message || err)); cb.disabled = false; cb.textContent = '取消'; }
+          };
+        }
         if (!c) return;
         c.hidden = false;
         c.classList.remove('hide', 'done', 'fail');
         document.getElementById('taskName').textContent = name;
       },
       update(p) {
+        if (p && p.cancelKey && p.cancelKey !== this.cancelKey) this.show(document.getElementById('taskName').textContent, p.cancelKey);
         const c = document.getElementById('taskCard');
         if (!c || c.hidden) return;
         const bar = document.getElementById('taskBar');
@@ -365,6 +381,8 @@
         if (pct) pct.textContent = p.percent != null ? p.percent + '%' : '';
       },
       finish(ok, text) {
+        const cb = document.getElementById('taskCancel');
+        if (cb) cb.hidden = true;
         const c = document.getElementById('taskCard');
         if (!c || c.hidden) return;
         c.classList.add(ok ? 'done' : 'fail');
@@ -376,13 +394,25 @@
     window.TaskCard = TaskCard;
 
     // ---------- 任务系统（下载页数据源）+ 右下角任务卡 ----------
+    const TASK_HISTORY_KEY = 'swustmcl.taskHistory';
+    const pushTaskHistory = (t) => {
+      try {
+        const hist = JSON.parse(localStorage.getItem(TASK_HISTORY_KEY) || '[]');
+        const rec = { name: t.name, source: t.source, status: t.status, start: t.start, end: t.end, message: t.message, percent: t.percent };
+        const next = [rec, ...hist.filter((x) => !(x.name === rec.name && x.start === rec.start))].slice(0, 100);
+        localStorage.setItem(TASK_HISTORY_KEY, JSON.stringify(next));
+      } catch {}
+    };
     const Tasks = {
       update(name, source, p) {
         const map = window.Store.get('taskMap') || {};
         const t = map[name] || { name, source: source || '本地', status: 'running', start: Date.now() };
+        if (p.cancelKey) t.cancelKey = p.cancelKey;
         t.percent = p.percent != null ? p.percent : t.percent;
         t.message = p.message || t.message;
-        if (p.stage === 'done' || (p.percent != null && p.percent >= 100)) { t.status = 'done'; t.end = Date.now(); }
+        if (p.stage === 'done' || (p.percent != null && p.percent >= 100)) {
+          if (t.status !== 'done') { t.status = 'done'; t.end = Date.now(); pushTaskHistory(t); }
+        }
         map[name] = t;
         window.Store.set({ taskMap: { ...map } });
       },
@@ -393,6 +423,7 @@
         t.status = 'failed';
         t.message = msg || t.message;
         t.end = Date.now();
+        pushTaskHistory(t);
         window.Store.set({ taskMap: { ...map } });
       },
     };
@@ -535,6 +566,16 @@
       Pages.home.onShow && Pages.home.onShow();
       if (gotoInstall) window.app.goto('download');
     });
+    if (window.smcl.onVersionsChanged) {
+      let lastRefresh = 0;
+      const refreshVersions = () => {
+        if (Date.now() - lastRefresh < 800) return;
+        lastRefresh = Date.now();
+        window.app.refreshInstalled().catch(() => {});
+      };
+      window.smcl.onVersionsChanged(refreshVersions);
+      window.addEventListener('focus', refreshVersions);
+    }
     window.smcl.onUpdateAvailable((r) => {
       window.Store.set({ updateInfo: r });
       Pages.home.onShow && Pages.home.onShow();
@@ -613,6 +654,9 @@
       if (e.relatedTarget === null && dropHover) hideDropTip();
     }, true);
     window.addEventListener('drop', async (e) => {
+      // 捕获阶段先于页面 dropzone 执行，只能按目标判断；页面内投放区自己处理
+      if (e.target && e.target.closest && e.target.closest('.dropzone')) return;
+      if (e.defaultPrevented) return;
       e.preventDefault();
       hideDropTip();
       // 拖入本地文件：整合包 zip 直接识别并询问是否安装

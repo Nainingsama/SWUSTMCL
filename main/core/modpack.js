@@ -20,6 +20,7 @@ const safe = require('./safe');
 const settingsLib = require('./settings');
 const versionLib = require('./versions');
 const log = require('./log');
+const net = require('./net');
 
 const SKIP_TOP = new Set(['launcher_profiles.json', 'launcher_accounts.json', 'logs', 'crash-reports', 'screenshots', '.fabric', 'CACHE', 'usercache.json']);
 
@@ -87,7 +88,7 @@ function inspect(file) {
       if (!f || f.path !== safe.safeEntryName(f.path)) continue; // 穿越路径直接丢弃
       files.push({
         path: f.path,
-        size: (f.sizes && f.sizes) ? (f.sizes.file || 0) : (f.size || 0),
+        size: (f.sizes && f.sizes.file) || f.fileSize || f.size || 0,
         hashes: f.hashes || {},
         downloads: f.downloads || [],
         env: f.env || null,
@@ -177,10 +178,14 @@ async function importPack(file, info, hooks = {}) {
   safe.assertVersionId(instanceId);
   const instanceDir = safe.safeJoin(path.join(mcDir, 'versions'), instanceId);
   await fsp.mkdir(instanceDir, { recursive: true });
+  if (hooks.onInstance) hooks.onInstance(instanceId, instanceDir);
+  const importingMarker = path.join(instanceDir, '.swustmcl-importing');
+  try { fs.writeFileSync(importingMarker, new Date().toISOString(), 'utf8'); } catch {}
 
   // ---------- 1. 底座与加载器 ----------
+  let needBase = false;
   if (info.mcVersion) {
-    const needBase = (() => {
+    needBase = (() => {
       try { versionLib.loadVersionJson(mcDir, info.mcVersion); return false; } catch { return true; }
     })();
     if (needBase) {
@@ -199,6 +204,47 @@ async function importPack(file, info, hooks = {}) {
         instanceId,
         (p) => report({ ...p, stage: 'loader', percent: 46 + Math.min(24, Math.round((p.percent || 0) * 0.24)) })
       );
+    }
+  }
+
+  // ---------- 1.5 合并底座：一个整合包实例只占一个 versions 目录 ----------
+  if (info.mcVersion) {
+    try {
+      const instJsonPath = path.join(instanceDir, `${instanceId}.json`);
+      const instJson = JSON.parse(fs.readFileSync(instJsonPath, 'utf8'));
+      const parentId = instJson.inheritsFrom;
+      if (parentId) {
+        const merged = versionLib.loadVersionJson(mcDir, parentId); // 已沿继承链合并
+        const out = { ...merged, ...instJson, id: instanceId };
+        delete out.inheritsFrom;
+        const instJar = path.join(instanceDir, `${instanceId}.jar`);
+        if (!fs.existsSync(instJar)) {
+          const parentJar = path.join(mcDir, 'versions', parentId, `${parentId}.jar`);
+          if (fs.existsSync(parentJar)) fs.copyFileSync(parentJar, instJar);
+        }
+        // 父版本是否还被别的实例继承
+        let usedByOthers = false;
+        try {
+          const vroot = path.join(mcDir, 'versions');
+          for (const d of fs.readdirSync(vroot)) {
+            if (d === parentId || d === instanceId) continue;
+            try {
+              const j = JSON.parse(fs.readFileSync(path.join(vroot, d, `${d}.json`), 'utf8'));
+              if (j.inheritsFrom === parentId) { usedByOthers = true; break; }
+            } catch {}
+          }
+        } catch {}
+        fs.writeFileSync(instJsonPath, JSON.stringify(out, null, 2), 'utf8');
+        log.info(`已合并底座 ${parentId} → ${instanceId}${usedByOthers ? '（保留底座）' : ''}`);
+        if (!usedByOthers && needBase) {
+          try {
+            fs.rmSync(path.join(mcDir, 'versions', parentId), { recursive: true, force: true });
+            log.info(`已移除临时底座目录：${parentId}`);
+          } catch (e) { log.warn('移除底座目录失败：' + e.message); }
+        }
+      }
+    } catch (e) {
+      log.warn('合并底座失败（不影响启动）：' + e.message);
     }
   }
 
@@ -246,47 +292,70 @@ async function importPack(file, info, hooks = {}) {
   const dl = info.files || [];
   const todo = dl.filter((f) => (f.downloads && f.downloads.length) || (hooks.resolveCurseforgeFile && f.projectID));
   let done = 0;
-  // 16 并发下载（原来串行，数千个小文件的 TLS 握手开销全部串行，速度只有个位数 KB/s）
-  await net.pool(todo, Math.min(16, Math.max(1, todo.length)), async (f) => {
+  const progress = new Map(); // rel -> 0..1
+  let lastEmit = 0;
+  const emitProgress = (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastEmit < 180) return;
+    lastEmit = now;
+    let sum = 0;
+    for (const v of progress.values()) sum += Math.min(1, v || 0);
+    const pct = 72 + Math.round((sum / Math.max(1, todo.length)) * 24);
+    report({ stage: 'files', message: `下载清单文件 ${done}/${todo.length}`, percent: Math.min(96, pct) });
+  };
+  const signal = hooks.signal || null;
+  await net.pool(todo, Math.min(24, Math.max(1, todo.length)), async (f) => {
+    if (signal && signal.aborted) { const e = new Error('已取消'); e.aborted = true; throw e; }
     const rel = safe.safeEntryName(f.path);
     if (!rel) return;
     const dest = safe.safeJoin(instanceDir, rel);
     await fsp.mkdir(path.dirname(dest), { recursive: true });
+    report({ stage: 'files', message: `下载清单文件 ${done + 1}/${todo.length} · ${path.basename(rel)}`, percent: Math.min(96, 72 + Math.round((done / Math.max(1, todo.length)) * 24)) });
     try {
       if (f.projectID && hooks.resolveCurseforgeFile) {
         const cf = await hooks.resolveCurseforgeFile(f.projectID, f.fileID);
-        await netDownloadFirst(cf.urls || [], dest, cf.hashes || {}, f.size || 0);
+        await netDownloadFirst(cf.urls || [], dest, cf.hashes || {}, f.size || 0, signal, (n) => { progress.set(rel, f.size ? n / f.size : 0); emitProgress(); });
       } else {
-        await netDownloadFirst(f.downloads || [], dest, f.hashes || {}, f.size || 0);
+        await netDownloadFirst(f.downloads || [], dest, f.hashes || {}, f.size || 0, signal, (n) => { progress.set(rel, f.size ? n / f.size : 0); emitProgress(); });
       }
     } catch (e) {
+      if (e && e.aborted) throw e;
       warnings.push(`${path.basename(rel)}：${e.message}`);
       if (f.env && f.env.client === 'unsupported') return;
       if (f.required === false) return;
     }
     done += 1;
-    report({ stage: 'files', message: `下载清单文件 ${done}/${todo.length}`, percent: 72 + Math.round((done / Math.max(1, todo.length)) * 24) });
+    progress.set(rel, 1);
+    emitProgress(true);
   });
 
+  try { fs.unlinkSync(importingMarker); } catch {}
   report({ stage: 'done', message: '导入完成', percent: 100 });
   log.info(`整合包导入完成：${instanceId}${warnings.length ? `（${warnings.length} 个警告）` : ''}`);
   return { id: instanceId, dir: instanceDir, warnings };
 }
 
 /** 依次尝试多个下载地址（镜像竞速在上层已由 net.download 处理） */
-async function netDownloadFirst(urls, dest, hashes, size) {
+async function netDownloadFirst(urls, dest, hashes, size, signal, onBytes) {
   const errors = [];
   for (const url of urls) {
     try {
-      await require('./net').download(url, dest, {
+      if (signal && signal.aborted) { const e = new Error('已取消'); e.aborted = true; throw e; }
+      const big = (size || 0) > 4 * 1024 * 1024;
+      await require('./net')[big ? 'downloadLarge' : 'download'](url, dest, {
         expectedSize: size || 0,
         expectedSha1: (hashes && hashes.sha1) || '',
         expectedSha256: (hashes && hashes.sha256) || '',
         expectZip: /\.jar$/i.test(dest),
         retries: 1,
+        timeout: 12000,
+        idleTimeout: 8000,
+        signal,
+        onBytes,
       });
       return;
     } catch (e) {
+      if (e && e.aborted) throw e;
       errors.push(e.message);
     }
   }
@@ -330,7 +399,7 @@ function exportPlan(mcDir, instanceId, dirOverride) {
   let loader = '', loaderVersion = '', mcVersion = '';
   if (meta) {
     mcVersion = versionLib.guessMcVersion(instanceId, meta);
-    const l = versionLib.loaderOf(instanceId, meta.mainClass);
+    const l = versionLib.loaderOf(instanceId, meta);
     if (l !== '原版') {
       loader = l.toLowerCase();
       const m = String(instanceId).match(/-([\d][^-]*?)(?:-1\.\d+)?$/) || String(instanceId).match(new RegExp(`${escapeRe(mcVersion)}$`));

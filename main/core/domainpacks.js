@@ -209,7 +209,7 @@ async function scanInstance(dir, instanceId) {
       id,
       name: displayName || id,
       mcVersion: versions.guessMcVersion(originalId, meta) || versions.guessMcVersion(id, meta) || '',
-      loader: versions.loaderOf(id, meta.mainClass),
+      loader: versions.loaderOf(id, meta),
       loaderVersion: loaderVersionOf(meta),
       javaMajor: (meta.javaVersion && meta.javaVersion.majorVersion) || 8,
       versionJson: merged,

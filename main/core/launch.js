@@ -365,7 +365,9 @@ function launch(id, options, handlers = {}) {
   const { java, args, cwd } = built;
   assertJavaPath(java);
 
-  const child = spawn(java, args, { cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  // detached：关闭启动器后游戏继续运行（Windows 上子进程默认随父进程退出）
+  const child = spawn(java, args, { cwd, windowsHide: true, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  try { child.unref(); } catch {}
 
   const pipe = (stream, isError) => {
     if (!stream) return;

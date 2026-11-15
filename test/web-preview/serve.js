@@ -138,6 +138,8 @@ const mock = {
   exportPack: async () => ({ count: 1 }),
   onExportProgress: () => () => {},
   contentSearch: async (q) => ({ source: q.source, total: modrinthHits.length, hits: modrinthHits }),
+  releaseNotes: async () => ({ ok: true, version: '1.2.4', date: '2026-11-11', items: ['服务器整合包：皮肤站管理员可在「版本管理 → 发布到域」把已有版本隔离实例发布为服务器整合包','进服策略：必装整合包在进服前强制安装/更新；原版增强包提供三选一','最低 Java：发布时可设置 Java 8/11/16/17/21/25/26+','增量发布：按 SHA-256 文件清单比对，只上传新增/修改文件'] }),
+  memoryAuto: async () => 5632,
   contentVersions: async () => [
     { id: 'v1', name: 'Sodium 0.6.3', versionNumber: '0.6.3+mc1.21.2', date: '', gameVersions: ['1.21.2'], loaders: ['fabric'], files: [{ url: '', filename: 'sodium-0.6.3.jar', size: 1048576, hashSha1: '', primary: true }], dependencies: [{ projectId: 'b', type: 'required' }] },
     { id: 'v2', name: 'Sodium 0.6.2', versionNumber: '0.6.2+mc1.21.1', date: '', gameVersions: ['1.21.1'], loaders: ['fabric'], files: [{ url: '', filename: 'sodium-0.6.2.jar', size: 1048576, hashSha1: '', primary: true }], dependencies: [] },

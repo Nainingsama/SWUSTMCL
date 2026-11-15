@@ -242,10 +242,12 @@ function avatarDir() {
  * - 离线：userData/skins/<小写玩家名>.png（设置页导入）
  * 结果缓存 6 小时（按文件的 mtime 判断），避免每次打开界面都拉网络。
  */
-async function fetchSkinTexture(uuid, name, force, hintSkinUrl) {
+async function fetchSkinTexture(uuid, name, force, hintSkinUrl, opts = {}) {
   const dir = avatarDir();
-  const key = String(uuid || name || 'steve').replace(/[^0-9a-zA-Z_-]/g, '').slice(0, 40) || 'steve';
+  const rawKey = opts.key || uuid || name || 'steve';
+  const key = String(rawKey).replace(/[^0-9a-zA-Z_-]/g, '').slice(0, 40) || 'steve';
   const file = path.join(dir, `${key}.png`);
+  const allowLocalSkin = opts.allowLocalSkin !== false;
 
   if (!force) {
     try {
@@ -258,14 +260,17 @@ async function fetchSkinTexture(uuid, name, force, hintSkinUrl) {
   }
 
   let bytes = null;
+  let isFallback = false;
 
-  // 1) 离线账户本地皮肤
-  const skinDir = path.join(app.getPath('userData'), 'skins');
-  const localSkin = path.join(skinDir, `${String(name || '').toLowerCase()}.png`);
-  try {
-    bytes = await fsp.readFile(localSkin);
-  } catch {
-    bytes = null;
+  // 1) 离线账户本地皮肤（仅离线账户；同名在线账户不能共用这张）
+  if (allowLocalSkin) {
+    const skinDir = path.join(app.getPath('userData'), 'skins');
+    const localSkin = path.join(skinDir, `${String(name || '').toLowerCase()}.png`);
+    try {
+      bytes = await fsp.readFile(localSkin);
+    } catch {
+      bytes = null;
+    }
   }
 
   // 1.2) 皮肤直链（登录/换角色时解析的 textures URL，最可靠）
@@ -273,6 +278,28 @@ async function fetchSkinTexture(uuid, name, force, hintSkinUrl) {
     try {
       const res = await fetch(hintSkinUrl, { signal: AbortSignal.timeout(15000) });
       if (res.ok) bytes = Buffer.from(await res.arrayBuffer());
+    } catch {}
+  }
+
+  // 1.4) 皮肤站 sessionserver 公开资料：不需要 token，按 uuid 拿 textures
+  if (!bytes && opts.authlibRoot && uuid) {
+    try {
+      const base = String(opts.authlibRoot).replace(/\/+$/, '');
+      const r = await fetch(`${base}/sessionserver/session/minecraft/profile/${encodeURIComponent(uuid)}`, {
+        signal: AbortSignal.timeout(15000),
+      });
+      if (r.ok) {
+        const j = await r.json();
+        const prop = (j.properties || []).find((x) => x && x.name === 'textures');
+        if (prop && prop.value) {
+          const data = JSON.parse(Buffer.from(String(prop.value), 'base64').toString('utf8'));
+          const url = data && data.textures && data.textures.SKIN && data.textures.SKIN.url;
+          if (url) {
+            const r2 = await fetch(url, { signal: AbortSignal.timeout(15000) });
+            if (r2.ok) bytes = Buffer.from(await r2.arrayBuffer());
+          }
+        }
+      }
     } catch {}
   }
 
@@ -374,9 +401,13 @@ async function fetchSkinTexture(uuid, name, force, hintSkinUrl) {
     try { lsb = BigInt('0x' + hex.slice(-16)); } catch {}
     const pick = (lsb & 1n) === 1n ? DEFAULT_ALEX_B64 : DEFAULT_SKIN_B64;
     bytes = Buffer.from(pick, 'base64');
+    isFallback = true;
     log.info(`使用默认皮肤（${(lsb & 1n) === 1n ? 'Alex' : 'Steve'}）`);
   }
-  try { await fsp.writeFile(file, bytes); } catch {} // 缓存写失败不影响返回
+  // 默认皮肤只是占位：不写缓存，下次进入账户页会重新尝试解析真实皮肤
+  if (!isFallback) {
+    try { await fsp.writeFile(file, bytes); } catch {} // 缓存写失败不影响返回
+  }
   return { file, cached: false, dataUrl: `data:image/png;base64,${bytes.toString('base64')}` };
 }
 
@@ -416,8 +447,8 @@ function localSkinFile(playerName) {
 }
 
 /** 清除头像缓存（删除本地皮肤/换皮肤后调用，避免 6 小时缓存展示旧图） */
-function clearAvatarCache(uuid, name) {
-  const key = String(uuid || name || 'steve').replace(/[^0-9a-zA-Z_-]/g, '').slice(0, 40) || 'steve';
+function clearAvatarCache(uuid, name, explicitKey) {
+  const key = String(explicitKey || uuid || name || 'steve').replace(/[^0-9a-zA-Z_-]/g, '').slice(0, 40) || 'steve';
   const file = path.join(avatarDir(), key + '.png');
   try { fs.unlinkSync(file); } catch {}
   try {
