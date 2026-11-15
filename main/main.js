@@ -1,6 +1,6 @@
 'use strict';
 /**
- * 星启 SWUSTMCL — 主进程入口。
+ * 星启 STMCL — 主进程入口。
  *
  * 安全模型：
  *   - contextIsolation: true，nodeIntegration: false，sandbox: true；
@@ -242,7 +242,7 @@ function createWindow() {
     frame: false,
     backgroundColor: '#0b0e14',
     icon: (() => { const ico = path.join(path.dirname(process.execPath), 'icon.ico'); return fs.existsSync(ico) ? ico : path.join(__dirname, '..', 'renderer', 'assets', 'logo.png'); })(),
-    title: '星启 SWUSTMCL',
+    title: '星启 STMCL',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -387,7 +387,7 @@ function migrateBuiltinWallpaperDupes() {
   } catch {}
 }
 
-app.setAppUserModelId('cn.swust.swustmcl');
+app.setAppUserModelId('cn.swust.stmcl');
 
 // swustmcl:// 域邀请协议：网页拖拽/点击可把域直接加进启动器
 try {
@@ -482,13 +482,13 @@ app.whenReady().then(async () => {
   try {
     if (app.isPackaged) {
       const exe = process.execPath;
-      const lnk = path.join(app.getPath('desktop'), '星启 SWUSTMCL.lnk');
+      const lnk = path.join(app.getPath('desktop'), '星启 STMCL.lnk');
       const ico = path.join(path.dirname(exe), 'icon.ico');
       try {
         shell.writeShortcutLink(lnk, 'create', {
           target: exe,
           cwd: path.dirname(exe),
-          description: '星启 SWUSTMCL · Minecraft 启动器',
+          description: '星启 STMCL · Minecraft 启动器',
           icon: fs.existsSync(ico) ? ico : exe,
           iconIndex: 0,
         });
@@ -563,7 +563,7 @@ async function startManifestWatch() {
         // 系统通知（可被设置关闭）
         if (settingsLib.all().autoCheck && Notification.isSupported()) {
           const n = new Notification({
-            title: '星启 SWUSTMCL',
+            title: '星启 STMCL',
             body: `Minecraft ${latest} 已发布，点击前往安装`,
             silent: false,
           });
@@ -1495,6 +1495,21 @@ ipcMain.handle('avatar:get', async (_e, payload) => {
       const p = entry.payload;
       const sel = requestedProfile || p.selected || (uuid ? { id: uuid, name } : null);
       if (sel && sel.skinUrl) hintSkinUrl = sel.skinUrl;
+      // sessionserver 是公开资料，不需要 token，也能避免换皮肤后拿到旧直链
+      if (!hintSkinUrl && p.root && uuid) {
+        try {
+          const base = String(p.root).replace(/\/+$/, '');
+          const res = await fetch(`${base}/sessionserver/session/minecraft/profile/${encodeURIComponent(uuid)}`, { signal: AbortSignal.timeout(12000) });
+          if (res.ok) {
+            const j = await res.json();
+            const prop = (j.properties || []).find((x) => x && x.name === 'textures');
+            if (prop && prop.value) {
+              const data = JSON.parse(Buffer.from(String(prop.value), 'base64').toString('utf8'));
+              hintSkinUrl = (data && data.textures && data.textures.SKIN && data.textures.SKIN.url) || '';
+            }
+          }
+        } catch {}
+      }
       // 只有请求的正是当前选中角色时才刷新令牌；否则会把服务端角色切走
       if (!hintSkinUrl && p.root && p.accessToken && sel && sel.id && (!p.selected || sel.id === p.selected.id)) {
         try {
@@ -1507,11 +1522,20 @@ ipcMain.handle('avatar:get', async (_e, payload) => {
       }
     }
   } catch {}
+  if (entry && entry.type === 'authlib' && !hintSkinUrl && !global.__avatarWarned) global.__avatarWarned = new Map();
   if (entry && entry.type === 'authlib' && !hintSkinUrl) {
-    log.warn('皮肤站头像缺少直链：uid=' + uid + ' root=' + ((entry.payload && entry.payload.root) || '-') + ' 有token=' + Boolean(entry.payload && entry.payload.accessToken) + ' 有selected=' + Boolean(entry.payload && entry.payload.selected));
+    const wkey = String(uid || name);
+    const last = global.__avatarWarned.get(wkey) || 0;
+    if (Date.now() - last > 10 * 60 * 1000) {
+      global.__avatarWarned.set(wkey, Date.now());
+      log.warn('皮肤站头像缺少直链：uid=' + uid + ' root=' + ((entry.payload && entry.payload.root) || '-') + ' 有token=' + Boolean(entry.payload && entry.payload.accessToken) + ' 有selected=' + Boolean(entry.payload && entry.payload.selected));
+    }
   }
+  const fallbackKey = entry && entry.type === 'authlib'
+    ? 'authlib-' + require('crypto').createHash('sha1').update(String(entry.uid || uuid || name)).digest('hex').slice(0, 16)
+    : '';
   const r = await core.account.fetchSkinTexture(uuid, name, force, hintSkinUrl, {
-    key: uuid || (entry && entry.uid) || '',
+    key: uuid || fallbackKey || (entry && entry.uid) || '',
     allowLocalSkin: !entry || entry.type === 'offline',
     authlibRoot: (entry && entry.type === 'authlib' && entry.payload && entry.payload.root) || '',
   });
@@ -2056,4 +2080,4 @@ ipcMain.handle('game:copyCommand', (_e, payload) => {
   return true;
 });
 
-log.info(`星启 SWUSTMCL ${app.getVersion()} 启动（GPU 兼容标记：${settingsLib.all().gpuFallback ? '开' : '关'}）`);
+log.info(`星启 STMCL ${app.getVersion()} 启动（GPU 兼容标记：${settingsLib.all().gpuFallback ? '开' : '关'}）`);

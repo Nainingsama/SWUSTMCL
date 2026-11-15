@@ -1,4 +1,4 @@
-# 星启 SWUSTMCL
+# 星启 STMCL
 
 > 西南科技大学 Minecraft 启动器 —— Electron + 原生 HTML/CSS/JS（无前端框架），免安装、MIT 开源。
 
@@ -52,7 +52,7 @@
 npm install
 npm start          # 开发运行
 npm test           # 单元测试（NBT / 安全边界 / 双源回退 / 启动参数）
-npm run build:win  # 打 Windows 免安装包 → dist/SWUSTMCL-<版本>-win-x64.zip
+npm run build:win  # 打 Windows 免安装包 → dist/STMCL-<版本>-win-x64.zip
 ```
 
 ## 目录结构
@@ -107,7 +107,7 @@ test/                单元测试
 ## 免安装与数据位置
 
 - **便携模式**：打包版把全部数据（配置、加密令牌、壁纸、缓存）放在程序目录旁的 `userdata/`，不写 %APPDATA%，删目录即卸载。
-- **开发模式**（`npm start`）数据在 `%APPDATA%\SWUSTMCL`。
+- **开发模式**（`npm start`）数据在 `%APPDATA%\STMCL`。
 
 ## 版本与更新日志
 
@@ -123,8 +123,8 @@ test/                单元测试
 2. 在 `CHANGELOG.md` 的 `[Unreleased]` 下整理变更，发版时改为 `[x.y.z] - YYYY-MM-DD`
 3. `npm test` 全绿后 `npm run build:win`
 4. 更新根目录 `version.json`：写入新版本、更新说明，以及 zip / Setup 等发布资产的 `name`、`size`、`sha256`、`url`（内置更新器的镜像兜底会读取它）
-5. 在 GitHub 创建同名 Tag（`vx.y.z`）的 Release，上传 `dist/SWUSTMCL-x.y.z-win-x64.zip`；如同时发布 NSIS 安装包，一并上传 `SWUSTMCL-x.y.z-Setup-x64.exe`，Release 说明直接引用 CHANGELOG 对应段落
-6. 客户端内置更新器会自动检查 `Nainingsama/SWUSTMCL` 的 Latest Release（增量校验后更新）
+5. 在 GitHub 创建同名 Tag（`vx.y.z`）的 Release，上传 `dist/STMCL-x.y.z-win-x64.zip`；如同时发布 NSIS 安装包，一并上传 `STMCL-x.y.z-Setup-x64.exe`，Release 说明直接引用 CHANGELOG 对应段落
+6. 客户端内置更新器会自动检查 `Nainingsama/STMCL` 的 Latest Release（增量校验后更新）
 
 CHANGELOG 分类约定：`新增 Added` / `变更 Changed` / `修复 Fixed` / `移除 Removed` / `安全 Security`，面向用户描述行为变化，不写内部实现细节。
 
@@ -133,7 +133,7 @@ CHANGELOG 分类约定：`新增 Added` / `变更 Changed` / `修复 Fixed` / `�
 | 现象 | 原因 | 处理 |
 | --- | --- | --- |
 | 双击后无窗口、瞬间闪退 | **搜狗输入法**的云组件（SGTool / SogouCloud / 智能助手）向新进程注入 DLL，被 Chromium 的代码完整性检查判定为非法注入后主动崩溃 | 任务管理器结束 `SGTool.exe`、`SogouCloud.exe`、`SOGOUSmartAssistant.exe` 后再启动；或在搜狗输入法设置里关闭「云输入 / 智能助手 / 今日热搜」 |
-| 启动后日志大量 `拒绝访问 (0x5)` | userData 缓存目录 ACL 损坏 | 启动时自动重置（改名重建）；手动法：删除 `userData` / `%APPDATA%\SWUSTMCL` |
+| 启动后日志大量 `拒绝访问 (0x5)` | userData 缓存目录 ACL 损坏 | 启动时自动重置（改名重建）；手动法：删除 `userData` / `%APPDATA%\STMCL` |
 | GPU 进程反复崩溃 | 驱动异常 / 安全软件拦截沙箱 | 启动器自动写入兼容标记并带 `--no-sandbox --disable-gpu-sandbox` 重启，无需手动处理 |
 | 下载速度慢 / 卡住 | 镜像限速或域名被污染 | 设置 → 下载源切「尽量官方」或「智能选择」，开启 DoH |
 

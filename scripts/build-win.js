@@ -17,7 +17,7 @@ const { execFileSync } = require('child_process');
 
 const root = path.join(__dirname, '..');
 const dist = path.join(root, 'dist');
-const stage = path.join(dist, 'SWUSTMCL');
+const stage = path.join(dist, 'STMCL');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
 function log(msg) {
@@ -83,15 +83,15 @@ async function main() {
   copy(electronDist, stage);
 
   // 3. 主程序改名（Electron 会从 resources/app 加载应用源码）
-  fs.renameSync(path.join(stage, 'electron.exe'), path.join(stage, 'SWUSTMCL.exe'));
+  fs.renameSync(path.join(stage, 'electron.exe'), path.join(stage, 'STMCL.exe'));
   // 图标文件（快捷方式 / 窗口图标用）
   if (fs.existsSync(path.join(root, 'build', 'icon.ico'))) copy(path.join(root, 'build', 'icon.ico'), path.join(stage, 'icon.ico'));
 
   // 3.5 若 electron-builder 已产出带品牌图标的 exe，优先用它（任务栏/桌面快捷方式图标才正确）
-  const branded = path.join(root, 'release', 'win-unpacked', 'SWUSTMCL.exe');
+  const branded = path.join(root, 'release', 'win-unpacked', 'STMCL.exe');
   if (fs.existsSync(branded)) {
     try {
-      fs.copyFileSync(branded, path.join(stage, 'SWUSTMCL.exe'));
+      fs.copyFileSync(branded, path.join(stage, 'STMCL.exe'));
       log('使用品牌图标 exe（release/win-unpacked）');
     } catch (e) {
       log('品牌 exe 复制失败，沿用原始 electron.exe：' + e.message);
@@ -129,7 +129,7 @@ async function main() {
 
   // 5. 打 zip
   log('压缩为 zip…');
-  const zipName = `SWUSTMCL-${pkg.version}-win-x64.zip`;
+  const zipName = `STMCL-${pkg.version}-win-x64.zip`;
   const zipPath = path.join(dist, zipName);
   const AdmZip = require('adm-zip');
   const zip = new AdmZip();

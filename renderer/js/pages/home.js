@@ -1152,7 +1152,7 @@
         );
       } catch {
         window.Dom.clear(bodyEl).append(
-          h('div.banner.banner-info', null, '✦', h('div.grow', null, '欢迎使用星启 SWUSTMCL')),
+          h('div.banner.banner-info', null, '✦', h('div.grow', null, '欢迎使用星启 STMCL')),
           h('div.muted', null, '更新日志暂不可用，可前往 GitHub Releases 查看。'),
         );
       }

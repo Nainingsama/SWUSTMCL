@@ -1,8 +1,8 @@
 {
   "name": "swustmcl",
-  "productName": "SWUSTMCL",
+  "productName": "STMCL",
   "version": "1.2.6",
-  "description": "星启 SWUSTMCL — 西南科技大学 Minecraft 启动器",
+  "description": "星启 STMCL — 西南科技大学 Minecraft 启动器",
   "main": "main/main.js",
   "author": "SWUSTMCL Contributors",
   "license": "MIT",
@@ -31,8 +31,8 @@
     "url": "git+https://github.com/Nainingsama/SWUSTMCL.git"
   },
   "build": {
-    "appId": "cn.swust.swustmcl",
-    "productName": "SWUSTMCL",
+    "appId": "cn.swust.stmcl",
+    "productName": "STMCL",
     "copyright": "Copyright © 2026 SWUSTMCL Contributors",
     "directories": {
       "output": "release",
@@ -57,7 +57,7 @@
           ]
         }
       ],
-      "artifactName": "SWUSTMCL-${version}-Setup-${arch}.${ext}",
+      "artifactName": "STMCL-${version}-Setup-${arch}.${ext}",
       "requestedExecutionLevel": "asInvoker",
       "icon": "build/icon.png"
     },
@@ -68,8 +68,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "星启 SWUSTMCL",
-      "uninstallDisplayName": "星启 SWUSTMCL",
+      "shortcutName": "星启 STMCL",
+      "uninstallDisplayName": "星启 STMCL",
       "language": "2052",
       "installerLanguages": [
         "zh_CN"
