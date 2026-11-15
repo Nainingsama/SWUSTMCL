@@ -288,7 +288,7 @@
               p.id === cur.id ? h('div.faint', null, '当前使用') : null,
             ),
           ));
-          window.smcl.getAvatar(p.id, p.name).then((r) => window.SkinView.drawHead3D(canvas, r && r.dataUrl)).catch(() => {});
+          window.smcl.getAvatar(p.id, p.name, a.uid, true).then((r) => window.SkinView.drawHead3D(canvas, r && r.dataUrl)).catch(() => {});
         }
       },
       footer: [h('button.btn', { onclick: () => m.close(null) }, '取消')],
@@ -383,7 +383,7 @@
         ...list.map((a) => {
           const profiles = (a.payload && a.payload.profiles) || [];
           const av = h('canvas', { width: 16, height: 16, style: { width: '20px', height: '20px', imageRendering: 'pixelated' } });
-          window.smcl.getAvatar(a.uuid, a.name).then((r) => window.SkinView.drawHead3D(av, r && r.dataUrl)).catch(() => {});
+          window.smcl.getAvatar(a.uuid, a.name, a.uid, true).then((r) => window.SkinView.drawHead3D(av, r && r.dataUrl)).catch(() => {});
           return h('div.ver-side-row' + (a.uid === activeId ? '.chosen' : ''), {
             title: ((a.payload && a.payload.serverName) || '') + ' · ' + profiles.length + ' 个角色',
             onclick: () => switchAccount(a),
@@ -432,7 +432,7 @@
             onclick: (e) => { e.stopPropagation(); switchProfile(profile); },
           }, isCurrent ? '当前角色' : '切换角色'),
         );
-        window.smcl.getAvatar(profile.id, profile.name).then((r) => window.SkinView.drawHead3D(canvas, r && r.dataUrl)).catch(() => {});
+        window.smcl.getAvatar(profile.id, profile.name, selected.uid, true).then((r) => window.SkinView.drawHead3D(canvas, r && r.dataUrl)).catch(() => {});
         return card;
       };
       const grid = h('div.grid', { style: { gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: '14px' } });

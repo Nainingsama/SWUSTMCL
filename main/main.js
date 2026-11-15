@@ -1449,10 +1449,18 @@ ipcMain.handle('avatar:get', async (_e, payload) => {
   let entry = null;
   try {
     const list = core.accountstore.read().list;
+    const profileOf = (a) => {
+      if (!a || a.type !== 'authlib' || !a.payload || !Array.isArray(a.payload.profiles)) return null;
+      return a.payload.profiles.find((p) => p && ((uuid && p.id === uuid) || (!uuid && name && p.name === name))) || null;
+    };
     entry = (uid && list.find((a) => a.uid === uid))
       || list.find((a) => (a.uuid && a.uuid === uuid) || (a.name && a.name === name))
+      || list.find((a) => profileOf(a))
       || null;
-    hintSkinUrl = (entry && entry.payload && (entry.payload.skinUrl || (entry.payload.selected && entry.payload.selected.skinUrl))) || '';
+    const requestedProfile = profileOf(entry);
+    hintSkinUrl = (requestedProfile && requestedProfile.skinUrl)
+      || (entry && entry.payload && (entry.payload.skinUrl || (entry.payload.selected && entry.payload.selected.skinUrl)))
+      || '';
     // 微软账户：令牌临近过期时自动续期，并用新令牌里的皮肤地址
     if (entry && entry.type === 'msa' && entry.payload) {
       const exp = Number(entry.payload.expiresAt) || 0;
@@ -1473,9 +1481,10 @@ ipcMain.handle('avatar:get', async (_e, payload) => {
     // 皮肤站账户：老数据没有保存 skinUrl，用该账户自己的 accessToken 解析一次并回写
     if (!hintSkinUrl && entry && entry.type === 'authlib' && entry.payload) {
       const p = entry.payload;
-      const sel = p.selected || (Array.isArray(p.profiles) && (p.profiles.find((x) => x && x.id === uuid) || p.profiles[0])) || (uuid ? { id: uuid, name } : null);
+      const sel = requestedProfile || p.selected || (uuid ? { id: uuid, name } : null);
       if (sel && sel.skinUrl) hintSkinUrl = sel.skinUrl;
-      if (!hintSkinUrl && p.root && p.accessToken && sel && sel.id) {
+      // 只有请求的正是当前选中角色时才刷新令牌；否则会把服务端角色切走
+      if (!hintSkinUrl && p.root && p.accessToken && sel && sel.id && (!p.selected || sel.id === p.selected.id)) {
         try {
           const rr = await core.authlib.selectProfile(p.root, p.accessToken, sel.id, p.clientToken);
           hintSkinUrl = (rr && rr.selected && rr.selected.skinUrl) || '';
@@ -1490,7 +1499,7 @@ ipcMain.handle('avatar:get', async (_e, payload) => {
     log.warn('皮肤站头像缺少直链：uid=' + uid + ' root=' + ((entry.payload && entry.payload.root) || '-') + ' 有token=' + Boolean(entry.payload && entry.payload.accessToken) + ' 有selected=' + Boolean(entry.payload && entry.payload.selected));
   }
   const r = await core.account.fetchSkinTexture(uuid, name, force, hintSkinUrl, {
-    key: (entry && entry.uid) || '',
+    key: uuid || (entry && entry.uid) || '',
     allowLocalSkin: !entry || entry.type === 'offline',
     authlibRoot: (entry && entry.type === 'authlib' && entry.payload && entry.payload.root) || '',
   });

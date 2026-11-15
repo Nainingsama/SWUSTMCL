@@ -273,15 +273,8 @@ async function fetchSkinTexture(uuid, name, force, hintSkinUrl, opts = {}) {
     }
   }
 
-  // 1.2) 皮肤直链（登录/换角色时解析的 textures URL，最可靠）
-  if (!bytes && hintSkinUrl) {
-    try {
-      const res = await fetch(hintSkinUrl, { signal: AbortSignal.timeout(15000) });
-      if (res.ok) bytes = Buffer.from(await res.arrayBuffer());
-    } catch {}
-  }
-
-  // 1.4) 皮肤站 sessionserver 公开资料：不需要 token，按 uuid 拿 textures
+  // 1.2) 皮肤站 sessionserver 公开资料：不需要 token，按 uuid 拿当前 textures。
+  // 必须优先于本地保存的 skinUrl——换皮肤后旧 URL 指向旧纹理哈希，会一直显示旧皮肤。
   if (!bytes && opts.authlibRoot && uuid) {
     try {
       const base = String(opts.authlibRoot).replace(/\/+$/, '');
@@ -300,6 +293,14 @@ async function fetchSkinTexture(uuid, name, force, hintSkinUrl, opts = {}) {
           }
         }
       }
+    } catch {}
+  }
+
+  // 1.3) 皮肤直链（登录/换角色时解析的 textures URL），sessionserver 不可用时兜底
+  if (!bytes && hintSkinUrl) {
+    try {
+      const res = await fetch(hintSkinUrl, { signal: AbortSignal.timeout(15000) });
+      if (res.ok) bytes = Buffer.from(await res.arrayBuffer());
     } catch {}
   }
 
