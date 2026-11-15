@@ -33,9 +33,34 @@
 
 - `js/store.js` —— 发布订阅状态机（`get/set/on`，支持通配）。
 - `js/theme.js` —— 设置 → CSS 变量联动（accent / 壁纸层 / 玻璃不透明度）。
-- `js/skinview.js` —— Canvas 手绘：8x8 头部（脸+帽子层）与 16x32 纸娃娃（64x64 overlay 层 + slim 支持）。
+- `js/skinview.js` —— PCL 风格 2D 头像（64×64 画布：脸 48px + 外层皮肤 56px 居中叠加，最近邻缩放）与 16×32 纸娃娃（64×64 overlay 层 + slim 支持）；不依赖 skinview3d/WebGL。
+- `js/domain-context.js` —— 个人域 / 站点型域上下文：切换、manifest 刷新、域内资源安装。
+- `js/pages/home.js` —— 首页组件；站点型域内角色切换浮层（按角色 UUID 切换，不是切换账号）。
+- `js/pages/account.js` —— 站点型域「左侧登录账号 / 右侧角色」双栏；个人域多账户卡片。
 - `js/pages/*.js` —— 每页一个模块：`render(root)` + `onShow()` + 进度事件回调。
 - 路由（`app.js`）：视图切换 = 旧页淡出上浮（140ms）→ 新页 `viewIn` 淡入上浮（280ms，`cubic-bezier(0.22,1,0.36,1)`）；`prefers-reduced-motion` 与手动开关时全部动画时长压到 0.01ms。
+
+### 其余核心模块
+
+| 模块 | 职责 |
+| --- | --- |
+| `core/accountstore.js` | 多账户存储（safeStorage 加密）：`list` / `activeId` / 三种账号 payload |
+| `core/authlib.js` | 第三方皮肤站登录、角色选择、authlib-injector 下载与签名校验 |
+| `core/domains.js` | 站点型域添加/切换、manifest 缓存、域内资源下载 |
+| `core/domainpacks.js` | 域整合包扫描、SHA-256 清单差异、分片发布、安装/更新 |
+| `core/servers.js` | 服务器列表与 SLP 在线探测 |
+| `core/history.js` | 游玩历史记录（首页日历） |
+| `core/instances.js` | 实例设置、改名、Mod 管理 |
+| `core/instanceassets.js` | 实例资源包 / 光影 / 截图浏览 |
+| `core/instancelog.js` | 每实例独立日志（2 MB 截断保留后半） |
+| `core/javainstall.js` | 缺失 Java 自动下载（清华 Adoptium → 官方兜底） |
+| `core/memory.js` | EmptyWorkingSet 内存优化 |
+| `core/rules.js` | 版本 JSON 的 OS / features 规则引擎 |
+| `core/translation.js` | 离线译名库与自学习 |
+| `core/releasenotes.js` | 解析 CHANGELOG，取最新版本段落 |
+| `core/log.js` | 主进程 + 游戏进程环形日志 |
+| `core/compat.js` | 搜狗输入法注入组件检测与兼容处理 |
+| `core/settings.js` | 配置持久化 + safeStorage 密钥存储 |
 
 ## 2. IPC 通道清单
 
@@ -43,22 +68,28 @@
 
 | 分组 | 通道（invoke） | 说明 |
 | --- | --- | --- |
-| 应用 | `app:state` `app:info` | 全量状态 / 版本信息 |
+| 应用 | `app:state` `app:info` `app:release-notes` + `app:close-prompt` / `app:close-choice` | 全量状态 / 版本信息 / 更新日志 / 关闭确认 |
 | 窗口 | `win:minimize` `win:maximize` `win:close`（send） | 无边框窗口控制 |
 | 设置 | `settings:save` + 事件 `settings:changed` | 白名单字段校验（内存/并发/来源/主题/壁纸五参数等） |
-| 目录 | `dirs:list` `dirs:add` `dirs:remove` | 游戏目录聚合 |
-| Java | `java:detect` | 并发探测 |
-| 版本 | `versions:manifest` `versions:installed` `versions:sizes` `version:command` `version:delete` | 清单/实例/体积后台补齐/复制命令/回收站 |
-| 安装 | `install:start` `game:repair` + 事件 `install:progress` | 单实例互斥（busy 标记） |
+| 目录 / Java | `dirs:list/add/remove` `java:detect` + `java:progress` | 游戏目录聚合、Java 探测与自动下载进度 |
+| 版本 | `versions:manifest/installed/sizes` `version:command/delete` + `versions:size` `versions:changed` | 清单/实例/体积后台补齐/复制命令/回收站 |
+| 安装 / 修复 | `install:start` `game:repair` + 事件 `install:progress` | 单实例互斥（busy 标记） |
 | 启动 | `game:launch` `game:kill` `game:copyCommand` `game:openLog` + `game:started/exit/error` | 令牌续期 → Java 挑选 → spawn |
 | 存档 | `saves:list` `saves:reveal` `saves:trash` + `saves:progress` | shell.trashItem |
 | 加载器 | `loader:list` `loader:install` + `loader:progress` | 底座自动补装 |
-| 整合包 | `modpack:pick/inspect/install` `pack:exportPlan/exportPick/export` + `modpack:progress` `pack:exportProgress` | |
-| 资源 | `content:search/versions/install` + `content:progress` | |
-| 账号 | `auth:status/login/logout`（cancel 为 send）`avatar:get` `skin:import/clear/local` + `auth:stage/done/failed` | 设备码阶段推送 |
-| 壁纸 | `wallpaper:pick/clear/palette` | 返回取色结果 |
-| 显卡 | `gpu:applyAll` | 批量写注册表 |
-| 更新 | `update:check` `update:install` + `update:available/progress/changelog` `manifest:latest` | |
+| 整合包 | `modpack:pick/inspect/install` `pack:exportPlan/exportPick/export` + `modpack:progress` `pack:exportProgress` | 导入/导出进度 |
+| 资源 | `content:search/chineseAlias/versions/install` `translation:stats` + `content:progress` | Modrinth / CurseForge 与译名 |
+| 账号 | `auth:status/login/logout`（cancel 为 send）`accounts:list/switch/addOffline/remove/selectProfile` `avatar:get` `skin:import/clear/local` `authlib:meta/login/selectProfile/logout` + `auth:stage/done/failed` | 设备码推送、多账户、皮肤站角色与头像缓存 |
+| 对话框 / 打开 | `dialog:pickDir/pickDirNew/pickJava` `clipboard:read/write` `open:path/url` `task:cancel` | 文件选择、剪贴板、外链、任务取消 |
+| 服务器 | `servers:list/ping/save/remove` | 服务器列表与 SLP 探测 |
+| 启动器域 | `domains:list/state/setActive/add/remove/refresh/downloadResource/installResource` + `domains:added/error/resourceProgress` | 域清单、切换与资源 |
+| 域整合包 | `domainpacks:scan/publish/install/tokenStatus/setToken/installed/playtime` + `domainpacks:progress` | 发布令牌、增量发布/安装、时长 |
+| 历史 / 实例资源 | `history:list` `log:instance` `log:instance:clear` `instance:assets` `instance:asset:trash` | 日历历史、实例日志与截图/资源包 |
+| 实例级管理 | `instance:settings:get/save` `instance:rename` `mods:list/toggle/delete/checkUpdate/applyUpdate` | 实例设置与 Mod 管理 |
+| 内存 | `memory:free/usage/auto` | 工作集优化与自动分配 |
+| 壁纸 | `wallpaper:pick/remove/clear/palette` | 双主题壁纸与取色 |
+| 显卡 | `gpu:applyAll/status` | 批量写注册表 / 读取启用状态 |
+| 更新 | `update:check` `update:install` + `update:available/progress/changelog` `manifest:latest` | Release 增量更新 |
 | 日志 | `log:recent` `log:clear`（send）+ `game:log` `game:log:cleared` | 环形缓冲 2000 行 |
 
 ## 3. 动效实现方案

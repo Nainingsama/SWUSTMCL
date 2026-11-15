@@ -5,7 +5,7 @@
 深色 / 浅色双主题 · 玻璃拟物（毛玻璃）· 卡片化 · 流畅动效，叠加在你自己的壁纸上。
 开箱即用：解压双击，自动发现 PCL / HMCL 的游戏目录与已装实例。
 
-![tech](https://img.shields.io/badge/Electron-45-47848F) ![license](https://img.shields.io/badge/License-MIT-green) ![platform](https://img.shields.io/badge/Windows-10%2F11-blue)
+![tech](https://img.shields.io/badge/Electron-33-47848F) ![license](https://img.shields.io/badge/License-MIT-green) ![platform](https://img.shields.io/badge/Windows-10%2F11-blue)
 
 ---
 
@@ -21,7 +21,7 @@
 | **整合包** | 导入 Modrinth / CurseForge / PCL·HMCL 裸目录 zip（拖拽或选择，自动识别四种格式 → 预览 → 重名自动改名 → 依赖校验）；导出为 Modrinth 格式 zip |
 | **资源** | Modrinth 全功能 + CurseForge（填 Key 后并行聚合；站点型域内由皮肤站中转，无需本机 Key），模组/光影/材质包，按版本与加载器筛选、**中文译名搜索**（离线译名库 + MC百科桥接 + 自学习）、前置 Mod **自动补全并显示名称**、分页浏览 |
 | **存档** | 跨目录扫描（含版本隔离实例），缩略图列表：世界名 / 版本 / 模式 / 最后游玩时间，按实例/版本/时间分组，定位与回收站 |
-| **账户** | 多账户管理（SAUMCL 风格卡片网格 + 「＋ 添加角色」**弹窗**）：**微软正版设备码登录（无需注册 Azure）**、**多开离线账户**、**皮肤站登录（authlib-injector，支持拖拽 / 剪贴板 / Ctrl+V 导入 API 地址）**；皮肤导入（64x64 / 64x32 / 128 高清）+ 纸娃娃预览；点击卡片切换，登录成功自动刷新 |
+| **账户** | 多账户管理（SAUMCL 风格卡片网格 + 「＋ 添加角色」**弹窗**）：**微软正版设备码登录（无需注册 Azure）**、**多开离线账户**、**皮肤站登录（authlib-injector，支持拖拽 / 剪贴板 / Ctrl+V 导入 API 地址）**；站点型域内改为「左侧登录账号 / 右侧角色」双栏，头像采用 PCL 同款外层皮肤 2D 头像；皮肤导入（64x64 / 64x32 / 128 高清）+ 纸娃娃预览；点击卡片切换，登录成功自动刷新 |
 | **设置** | 游戏存储位置（任意盘符）、内存自动分配 + **启动前自动优化** + 手动优化按钮、JVM 参数、**缺失 Java 自动下载**（清华 Adoptium 镜像）、下载源三档（智能选择/尽量镜像/尽量官方）、DoH 加速解析、**浅色/深色各一套壁纸**（铺满/完整/拉伸 + 5 种蒙版 + 不透明度/模糊/压暗/玻璃度）、主题色固定校徽蓝或跟随壁纸取色 |
 | **更新** | GitHub Release 增量更新：体积 + SHA-256 + zip 结构三重校验，不覆盖安装；5 分钟版本巡查 + 系统通知 |
 
@@ -40,11 +40,11 @@
 
 > **国内下载慢？** 在下载链接前加加速前缀即可，例如：
 > 
->     https://gh-proxy.com/https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.1.0/SWUSTMCL-1.1.0-Setup-x64.exe
+>     https://gh-proxy.com/https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.6/SWUSTMCL-1.2.6-Setup-x64.exe
 > 
 > 也可把前缀换成 https://ghproxy.net/ ；启动器内置更新在直连卡住 12 秒后会自动切换镜像。
 
-**直接使用**：下载 [Releases](https://github.com/Nainingsama/SWUSTMCL/releases) 里的 `SWUSTMCL-1.1.1-win-x64.zip`，解压到任意目录，双击 `SWUSTMCL.exe` —— 免安装，数据存在程序旁的 `userdata/`，删目录即卸载。
+**直接使用**：下载 [Releases](https://github.com/Nainingsama/SWUSTMCL/releases) 里最新的 `SWUSTMCL-x.y.z-win-x64.zip`，解压到任意目录，双击 `SWUSTMCL.exe` —— 免安装，数据存在程序旁的 `userdata/`，删目录即卸载。
 
 **从源码运行**（需要 Node.js 18+）：
 
@@ -122,8 +122,9 @@ test/                单元测试
 1. `package.json` 的 `version` 改新版本号
 2. 在 `CHANGELOG.md` 的 `[Unreleased]` 下整理变更，发版时改为 `[x.y.z] - YYYY-MM-DD`
 3. `npm test` 全绿后 `npm run build:win`
-4. 在 GitHub 创建同名 Tag（`vx.y.z`）的 Release，上传 `dist/SWUSTMCL-x.y.z-win-x64.zip`，Release 说明直接引用 CHANGELOG 对应段落
-5. 客户端内置更新器会自动检查 `Nainingsama/SWUSTMCL` 的 Latest Release（增量校验后更新）
+4. 更新根目录 `version.json`：写入新版本、更新说明，以及 zip / Setup 等发布资产的 `name`、`size`、`sha256`、`url`（内置更新器的镜像兜底会读取它）
+5. 在 GitHub 创建同名 Tag（`vx.y.z`）的 Release，上传 `dist/SWUSTMCL-x.y.z-win-x64.zip`；如同时发布 NSIS 安装包，一并上传 `SWUSTMCL-x.y.z-Setup-x64.exe`，Release 说明直接引用 CHANGELOG 对应段落
+6. 客户端内置更新器会自动检查 `Nainingsama/SWUSTMCL` 的 Latest Release（增量校验后更新）
 
 CHANGELOG 分类约定：`新增 Added` / `变更 Changed` / `修复 Fixed` / `移除 Removed` / `安全 Security`，面向用户描述行为变化，不写内部实现细节。
 
