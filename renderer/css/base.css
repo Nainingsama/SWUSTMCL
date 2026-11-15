@@ -472,6 +472,7 @@ body.resizing-sidebar iframe, body.resizing-sidebar canvas { pointer-events: non
   flex: none;
 }
 .avatar-tile { width: 64px !important; height: 64px !important; margin: 0 auto; }
+.account-page .avatar-tile { width: 80px !important; height: 80px !important; }
 .avatar-wrap { width: 32px !important; height: 32px !important; }
 .account-card .avatar-wrap { width: 48px !important; height: 48px !important; }
 .player-chip .avatar-wrap { width: 48px !important; height: 48px !important; }

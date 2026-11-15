@@ -192,7 +192,7 @@
       document.getElementById('accountMode').title = domain && !domain.personal ? domain.name : '';
       window.smcl.getAvatar(acc.uuid, acc.name).then((r) => {
         if (r && r.dataUrl) {
-          window.SkinView.drawHead(document.getElementById('sidebarAvatar'), r.dataUrl).catch(() => {});
+          window.SkinView.drawHead3D(document.getElementById('sidebarAvatar'), r.dataUrl).catch(() => {});
         } else {
           // 皮肤尚未下载完成：稍后自动重试一次
           setTimeout(() => window.app.updateAccountCard(), 4000);

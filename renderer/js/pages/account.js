@@ -288,7 +288,7 @@
               p.id === cur.id ? h('div.faint', null, '当前使用') : null,
             ),
           ));
-          window.smcl.getAvatar(p.id, p.name).then((r) => window.SkinView.drawHead(canvas, r && r.dataUrl)).catch(() => {});
+          window.smcl.getAvatar(p.id, p.name).then((r) => window.SkinView.drawHead3D(canvas, r && r.dataUrl)).catch(() => {});
         }
       },
       footer: [h('button.btn', { onclick: () => m.close(null) }, '取消')],
@@ -352,6 +352,104 @@
       openAddModal('authlib', domainRoot);
     };
     const activeId = store.activeId || '';
+
+    // ---- 站点型域：左侧登录账号，右侧该账号下的角色 ----
+    if (managed) {
+      const accountLabel = (a) => String((a && a.payload && a.payload.username) || (a && a.name) || '未命名账号');
+      const selected = list.find((a) => a.uid === activeId) || list[0] || null;
+      const removeAccount = async (a, e) => {
+        e.stopPropagation();
+        const ok = await window.Modal.confirm({ title: '移除账号', message: `移除「${accountLabel(a)}」？该账号下的角色也会从启动器移除。`, danger: true });
+        if (!ok) return;
+        try {
+          await window.smcl.accountsRemove(a.uid);
+          window.Store.set({ account: await window.smcl.authStatus() });
+          window.app.updateAccountCard();
+          render();
+        } catch (err) { window.Toast.error(err.message); }
+      };
+      const switchAccount = async (a) => {
+        if (a.uid === activeId) return;
+        try {
+          const st = await window.smcl.accountsSwitch(a.uid);
+          window.Store.set({ account: st, settings: await window.smcl.state().then((x) => x.settings) });
+          window.app.updateAccountCard();
+          window.Theme.applyAll(window.Store.state.settings, window.Store.get('wallpaperTheme'));
+          window.Toast.success('已切换到账号：' + accountLabel(a));
+          render();
+        } catch (e) { window.Toast.error(e.message); }
+      };
+      const side = h('div.ver-side', { style: { width: '230px', flex: 'none', height: 'calc(100vh - 112px)' } },
+        ...list.map((a) => {
+          const profiles = (a.payload && a.payload.profiles) || [];
+          const av = h('canvas', { width: 16, height: 16, style: { width: '20px', height: '20px', imageRendering: 'pixelated' } });
+          window.smcl.getAvatar(a.uuid, a.name).then((r) => window.SkinView.drawHead3D(av, r && r.dataUrl)).catch(() => {});
+          return h('div.ver-side-row' + (a.uid === activeId ? '.chosen' : ''), {
+            title: ((a.payload && a.payload.serverName) || '') + ' · ' + profiles.length + ' 个角色',
+            onclick: () => switchAccount(a),
+          },
+            h('span.nav-icon', { style: { display: 'inline-flex', flex: 'none', width: '20px', height: '20px' } }, av),
+            h('span.ellipsis.grow', { style: { fontWeight: '600', fontSize: '13px' } }, accountLabel(a)),
+            h('span.badge', null, String(profiles.length || 1)),
+            h('button.iconbtn', { title: '移除账号', onclick: (e) => removeAccount(a, e) },
+              h('span', { style: { color: '#ff6369', display: 'inline-flex' } }, icon('trash', 14))),
+          );
+        }),
+        h('span.spacer'),
+        h('button.ver-side-btn', { onclick: domainLogin }, icon('plus', 14), '登录域账号'),
+      );
+      const profiles = (selected && selected.payload && selected.payload.profiles) || [];
+      const currentId = selected ? (selected.uuid || (selected.payload && selected.payload.selected && selected.payload.selected.id) || '') : '';
+      const displayProfiles = profiles.length ? profiles : (selected ? [{ id: selected.uuid, name: selected.name, skinUrl: (selected.payload && selected.payload.skinUrl) || '' }] : []);
+      const switchProfile = async (profile) => {
+        if (!selected || profile.id === currentId) return;
+        try {
+          const st = await window.smcl.accountsSelectProfile(selected.uid, profile.id);
+          window.Store.set({ account: st, settings: await window.smcl.state().then((x) => x.settings) });
+          window.app.updateAccountCard();
+          window.Theme.applyAll(window.Store.state.settings, window.Store.get('wallpaperTheme'));
+          window.Toast.success('已切换角色：' + profile.name);
+          render();
+        } catch (e) { window.Toast.error(e.message); }
+      };
+      const characterCard = (profile) => {
+        const isCurrent = profile.id === currentId;
+        const canvas = h('canvas', { width: 8, height: 8, style: { width: '100%', height: '100%', borderRadius: '0', imageRendering: 'pixelated' } });
+        const card = h('div.card.hoverable' + (isCurrent ? '.acct-active' : ''), {
+          style: { padding: '14px', position: 'relative', textAlign: 'center' },
+          onclick: () => switchProfile(profile),
+        },
+          h('div.row', { style: { justifyContent: 'space-between' } },
+            isCurrent ? h('span.badge.badge-blue', null, '● 当前角色') : h('span', { style: { width: '18px' } }),
+            h('span', { style: { width: '18px' } }),
+          ),
+          h('div', { style: { margin: '6px 0 10px' } }, h('div.avatar-tile', null, canvas)),
+          h('div', { style: { fontWeight: '700', fontSize: '14px' } }, profile.name || '未命名角色'),
+          h('div', { style: { color: 'var(--text-dim)', fontSize: '12px', marginTop: '3px' } }, selected ? ((selected.payload && (selected.payload.username || selected.payload.serverName)) || '') : ''),
+          h('button.btn.btn-ghost.btn-xs', {
+            style: { marginTop: '8px' },
+            disabled: isCurrent,
+            onclick: (e) => { e.stopPropagation(); switchProfile(profile); },
+          }, isCurrent ? '当前角色' : '切换角色'),
+        );
+        window.smcl.getAvatar(profile.id, profile.name).then((r) => window.SkinView.drawHead3D(canvas, r && r.dataUrl)).catch(() => {});
+        return card;
+      };
+      const grid = h('div.grid', { style: { gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: '14px' } });
+      if (!displayProfiles.length) {
+        grid.append(h('div.empty', { style: { gridColumn: '1/-1' } }, h('div.empty-icon', null, icon('person', 34)), '该账号下还没有角色'));
+      } else {
+        for (const profile of displayProfiles) grid.append(characterCard(profile));
+      }
+      const head = h('div.row', null,
+        h('div', { style: { fontWeight: '700', fontSize: '15px' } },
+          selected ? (accountLabel(selected) + ' · 角色') : (domain.name + ' · 域账号')),
+        h('span.spacer'),
+        h('button.btn.btn-primary.btn-sm.pressable', { onclick: domainLogin }, '登录域账号'),
+      );
+      root.append(h('div.row', { style: { alignItems: 'stretch' } }, side, h('div.col.grow', null, head, grid)));
+      return;
+    }
 
     // ---- 左：来源过滤（每个皮肤站单独一行）----
     const counts = { all: list.length };
@@ -457,7 +555,7 @@
         } catch (e) { window.Toast.error(e.message); }
       });
       if (isActive) card.classList.add('acct-active');
-      window.smcl.getAvatar(a.uuid, a.name, a.uid, true).then((r) => window.SkinView.drawHead(canvas, r && r.dataUrl)).catch(() => {});
+      window.smcl.getAvatar(a.uuid, a.name, a.uid, true).then((r) => window.SkinView.drawHead3D(canvas, r && r.dataUrl)).catch(() => {});
       return card;
     }
   }

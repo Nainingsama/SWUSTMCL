@@ -151,7 +151,7 @@
           h('div.faint', null, labelOf(a)),
         ),
       );
-      window.smcl.getAvatar(a.uuid, a.name, a.uid).then((r) => window.SkinView.drawHead(canvas, r && r.dataUrl)).catch(() => {});
+      window.smcl.getAvatar(a.uuid, a.name, a.uid).then((r) => window.SkinView.drawHead3D(canvas, r && r.dataUrl)).catch(() => {});
       panel.append(row);
     }
     close = openFloatPanel(anchor, panel);
@@ -959,12 +959,12 @@
       modeEl.textContent = mode;
       modeEl.title = mode;
       if (blocked) {
-        if (av) await window.SkinView.drawHead(av, '');
+        if (av) await window.SkinView.drawHead3D(av, '');
         return;
       }
       try {
         const r = await window.smcl.getAvatar(acc.uuid || '', acc.name || 'Steve');
-        if (av) await window.SkinView.drawHead(av, r && r.dataUrl);
+        if (av) await window.SkinView.drawHead3D(av, r && r.dataUrl);
       } catch {}
     };
     if (!home._accSub) { home._accSub = true; window.Store.on('account', () => syncPlayerChip()); }
@@ -1326,13 +1326,13 @@
   async function drawAvatar(canvas) {
     const dom = domainAccount();
     if (dom.managed && !dom.allowed) {
-      await window.SkinView.drawHead(canvas, '');
+      await window.SkinView.drawHead3D(canvas, '');
       return;
     }
     const acc = dom.account || window.Store.state.account;
     try {
       const r = await window.smcl.getAvatar(acc ? acc.uuid : '', acc ? acc.name : 'Steve');
-      await window.SkinView.drawHead(canvas, r && r.dataUrl);
+      await window.SkinView.drawHead3D(canvas, r && r.dataUrl);
     } catch {}
   }
 

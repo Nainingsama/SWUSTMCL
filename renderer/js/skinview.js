@@ -1,6 +1,6 @@
 'use strict';
 /**
- * 皮肤绘制：8x8 头部（含帽子层）头像 + 正面纸娃娃。
+ * 皮肤绘制：PCL 风格头像 + 正面纸娃娃。
  * 全部基于 Canvas 手绘，无需第三方库。
  */
 (function () {
@@ -15,9 +15,43 @@
   }
 
   /**
-   * PCL 风格大头贴：头部 8x8（含帽子层）+ 底部 8x2 肩条（身体顶部）。
-   * 逻辑画布 8x10，CSS 拉伸显示。
+   * PCL 风格头像：64×64 画布。
+   * 脸部 8×8 纹理放大到 48×48（居中），外层皮肤 8×8 放大到 56×56（居中）盖在上面，
+   * 形成一圈真实外层像素边框；外层中间透明时自然露出脸。
+   * 与 PCL2 MySkin 控件一致：ImgBack 48×48、ImgFore 56×56、最近邻缩放。
    */
+  async function drawHead3D(canvas, dataUrl, opts = {}) {
+    const TILE = 64;
+    const FACE = 48;
+    const HAT = 56;
+    canvas.width = TILE;
+    canvas.height = TILE;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, TILE, TILE);
+    if (!dataUrl) return false;
+    let img;
+    try {
+      img = await loadSkin(dataUrl);
+    } catch {
+      return false;
+    }
+    const s = img.width / 64;
+    if (!s) return false;
+    const faceOffset = (TILE - FACE) / 2;
+    const hatOffset = (TILE - HAT) / 2;
+    // 脸层
+    ctx.drawImage(img, 8 * s, 8 * s, 8 * s, 8 * s, faceOffset, faceOffset, FACE, FACE);
+    // 外层皮肤（帽子/头发/头盔），仅 64×64 现代皮肤拥有
+    if (opts.hat !== false && img.height >= 64) {
+      ctx.drawImage(img, 40 * s, 8 * s, 8 * s, 8 * s, hatOffset, hatOffset, HAT, HAT);
+    }
+    return true;
+  }
+
+  /** 兼容旧调用：头像统一使用 PCL 风格。 */
+  const drawHead = drawHead3D;
+
   async function drawBust(canvas, dataUrl, opts = {}) {
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -38,38 +72,6 @@
     ctx.drawImage(img, 8 * s, 8 * s, 8 * s, 8 * s, 0, 0, 8, 8);
     // 帽子层
     ctx.drawImage(img, 40 * s, 8 * s, 8 * s, 8 * s, 0, 0, 8, 8);
-    return true;
-  }
-
-  /**
-   * 头像：8x8 脸 + 帽子层 8x8。
-   * 源坐标：64x64 皮肤的标准坐标 = 图像像素；高清皮肤按 img.height/64 等比放大。
-   */
-  async function drawHead(canvas, dataUrl, { hat = true, flipX = false } = {}) {
-    // Minecraft 标准头部 UV：第一层 (8,8,8,8)，第二层/帽子 (40,8,8,8)
-    const N = 8; // 原生 8x8，显示层最近邻放大
-    canvas.width = N;
-    canvas.height = N;
-    const ctx = canvas.getContext('2d');
-    ctx.imageSmoothingEnabled = false;
-    ctx.clearRect(0, 0, N, N);
-    if (!dataUrl) return false;
-    let img;
-    try {
-      img = await loadSkin(dataUrl);
-    } catch {
-      return false;
-    }
-    const s = img.width / 64;
-    if (!s) return false;
-    ctx.save();
-    if (flipX) {
-      ctx.translate(N, 0);
-      ctx.scale(-1, 1);
-    }
-    ctx.drawImage(img, 8 * s, 8 * s, 8 * s, 8 * s, 0, 0, N, N);
-    if (hat) ctx.drawImage(img, 40 * s, 8 * s, 8 * s, 8 * s, 0, 0, N, N);
-    ctx.restore();
     return true;
   }
 
@@ -121,5 +123,5 @@
     return true;
   }
 
-  window.SkinView = { drawHead, drawBust, drawDoll };
+  window.SkinView = { drawHead, drawHead3D, drawBust, drawDoll };
 })();

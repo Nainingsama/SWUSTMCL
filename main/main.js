@@ -1921,9 +1921,9 @@ ipcMain.handle('authlib:login', async (_e, payload) => {
   }
   settingsLib.setSecret('authlib', {
     root: r.root, serverName: r.serverName || '', accessToken, clientToken: r.clientToken,
-    profiles: r.profiles, selected,
+    profiles: r.profiles, selected, username: String(payload.username || ''),
   });
-  const alUid = core.accountstore.upsert({ uid: 'authlib-' + r.root + '-' + (selected ? selected.id : ''), type: 'authlib', name: selected ? selected.name : r.root, uuid: selected ? selected.id : '', payload: { root: r.root, serverName: r.serverName || '', accessToken, clientToken: r.clientToken, profiles: r.profiles, selected, skinUrl: (selected && selected.skinUrl) || '' } });
+  const alUid = core.accountstore.upsert({ uid: 'authlib-' + r.root + '-' + (selected ? selected.id : ''), type: 'authlib', name: selected ? selected.name : r.root, uuid: selected ? selected.id : '', payload: { root: r.root, serverName: r.serverName || '', accessToken, clientToken: r.clientToken, profiles: r.profiles, selected, skinUrl: (selected && selected.skinUrl) || '', username: String(payload.username || '') } });
   if (selected) core.account.clearAvatarCache(selected.id, selected.name);
   core.accountstore.setActive(alUid);
   settingsLib.save({ loginMode: 'authlib' });
