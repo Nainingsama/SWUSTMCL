@@ -1,18 +1,18 @@
 {
-  "version": "1.2.6",
-  "notes": "1.2.6：修复大文件分片重试写入偏移导致的下载损坏（SHA-1 校验失败）；内容级错误不再续传坏文件。",
+  "version": "1.2.7",
+  "notes": "1.2.7：英文名改为 STMCL；皮肤站头像优先 sessionserver 公开纹理并修复缓存串号；整合包导入使用精确实例名、取消可中止并清理半成品。",
   "assets": [
     {
-      "name": "SWUSTMCL-1.2.6-win-x64.zip",
-      "size": 124732381,
-      "sha256": "e539e3f8745c9726b09aff5955e6ab7f2cda9da637b0f9237fada9a34b27e40c",
-      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.6/SWUSTMCL-1.2.6-win-x64.zip"
+      "name": "STMCL-1.2.7-win-x64.zip",
+      "size": 124736038,
+      "sha256": "aa936470340794785243c48ac3ffa17776bb247b63795d6befe0c1ab2a0b0b51",
+      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.7/STMCL-1.2.7-win-x64.zip"
     },
     {
-      "name": "SWUSTMCL-1.2.6-Setup-x64.exe",
-      "size": 94410002,
-      "sha256": "9c7b703b2803f9fac76d74fb8ee5bd32ce04dcee7e171fd41658504b32c0b200",
-      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.6/SWUSTMCL-1.2.6-Setup-x64.exe"
+      "name": "STMCL-1.2.7-Setup-x64.exe",
+      "size": 94412242,
+      "sha256": "631336eddf702b758f458da131b98235b412e00e3c405048338b23018f75b3e5",
+      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.7/STMCL-1.2.7-Setup-x64.exe"
     }
   ]
 }
