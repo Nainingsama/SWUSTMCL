@@ -38,6 +38,12 @@
     return close;
   }
 
+  /** 立即收起当前浮层（页面跳转前调用，避免浮层残留在新页面） */
+  function closeActiveFloat() {
+    if (!activeFloat) return;
+    try { activeFloat.close(); } catch {}
+  }
+
   function instanceLabel(select) {
     const list = window.Store.state.installed || [];
     const cur = list.find((v) => v.id === (select && select.value));
@@ -106,7 +112,7 @@
     setTimeout(() => search.focus(), 30);
   }
 
-  /** 账户切换浮层：头像 + 名字 + 模式，点击即切换 */
+  /** 账户/角色切换浮层：头像 + 名字 + 模式，点击即切换 */
   async function openAccountPicker(anchor) {
     let store;
     try { store = await window.smcl.accountsList(); } catch { return; }
@@ -130,29 +136,71 @@
     };
     const panel = h('div.acct-picker');
     let close = () => {};
-    for (const a of list) {
-      const canvas = h('canvas', { width: 8, height: 8 });
-      const row = h('div.acct-row' + (a.uid === store.activeId ? '.chosen' : ''), {
-        onclick: async () => {
-          close();
-          try {
-            const st = await window.smcl.accountsSwitch(a.uid);
-            window.Store.set({ account: st, settings: await window.smcl.state().then((x) => x.settings) });
-            window.app.updateAccountCard();
-            window.Toast.success('已切换到：' + a.name);
-            if (rootEl2) await render(rootEl2);
-          } catch (e) { window.Toast.error(e.message); }
+
+    // 站点型域：首页展示的是角色，点击切换角色而不是整个账号
+    if (managed) {
+      panel.append(h('div', { style: { padding: '4px 10px 8px', fontSize: '12px', color: 'var(--text-dim)', fontWeight: '600' } }, '切换角色'));
+      let roleCount = 0;
+      for (const a of list) {
+        const payload = a.payload || {};
+        const profiles = Array.isArray(payload.profiles) && payload.profiles.length
+          ? payload.profiles
+          : [{ id: a.uuid || (payload.selected && payload.selected.id) || '', name: a.name }];
+        const activeProfileId = a.uuid || (payload.selected && payload.selected.id) || '';
+        for (const p of profiles) {
+          const current = a.uid === store.activeId && (!activeProfileId || p.id === activeProfileId);
+          const canvas = h('canvas', { width: 8, height: 8 });
+          const row = h('div.acct-row' + (current ? '.chosen' : ''), {
+            onclick: async () => {
+              if (current) { close(); return; }
+              close();
+              try {
+                const st = await window.smcl.accountsSelectProfile(a.uid, p.id);
+                window.Store.set({ account: st, settings: await window.smcl.state().then((x) => x.settings) });
+                window.app.updateAccountCard();
+                window.Toast.success('已切换角色：' + p.name);
+                if (rootEl2) await render(rootEl2);
+              } catch (e) { window.Toast.error(e.message); }
+            },
+          },
+            h('span.inst-radio' + (current ? '.on' : ''), { style: { flex: 'none' } }),
+            canvas,
+            h('div.grow', { style: { minWidth: 0 } },
+              h('div', { style: { fontWeight: '650', fontSize: '13.5px' } }, p.name),
+              h('div.faint', null, labelOf(a)),
+            ),
+          );
+          window.smcl.getAvatar(p.id, p.name, a.uid, true).then((r) => window.SkinView.drawHead3D(canvas, r && r.dataUrl)).catch(() => {});
+          panel.append(row);
+          roleCount += 1;
+        }
+      }
+      if (!roleCount) panel.append(h('div.faint', { style: { padding: '8px 10px' } }, '该域账号下还没有角色'));
+    } else {
+      for (const a of list) {
+        const canvas = h('canvas', { width: 8, height: 8 });
+        const row = h('div.acct-row' + (a.uid === store.activeId ? '.chosen' : ''), {
+          onclick: async () => {
+            close();
+            try {
+              const st = await window.smcl.accountsSwitch(a.uid);
+              window.Store.set({ account: st, settings: await window.smcl.state().then((x) => x.settings) });
+              window.app.updateAccountCard();
+              window.Toast.success('已切换账号：' + a.name);
+              if (rootEl2) await render(rootEl2);
+            } catch (e) { window.Toast.error(e.message); }
+          },
         },
-      },
-        h('span.inst-radio' + (a.uid === store.activeId ? '.on' : ''), { style: { flex: 'none' } }),
-        canvas,
-        h('div.grow', { style: { minWidth: 0 } },
-          h('div', { style: { fontWeight: '650', fontSize: '13.5px' } }, a.name),
-          h('div.faint', null, labelOf(a)),
-        ),
-      );
-      window.smcl.getAvatar(a.uuid, a.name, a.uid).then((r) => window.SkinView.drawHead3D(canvas, r && r.dataUrl)).catch(() => {});
-      panel.append(row);
+          h('span.inst-radio' + (a.uid === store.activeId ? '.on' : ''), { style: { flex: 'none' } }),
+          canvas,
+          h('div.grow', { style: { minWidth: 0 } },
+            h('div', { style: { fontWeight: '650', fontSize: '13.5px' } }, a.name),
+            h('div.faint', null, labelOf(a)),
+          ),
+        );
+        window.smcl.getAvatar(a.uuid, a.name, a.uid).then((r) => window.SkinView.drawHead3D(canvas, r && r.dataUrl)).catch(() => {});
+        panel.append(row);
+      }
     }
     close = openFloatPanel(anchor, panel);
   }
@@ -901,7 +949,7 @@
         h('div.pc-name', { style: { fontSize: '14px', fontWeight: '650' } }, playerName),
         h('div.faint.pc-mode', { title: modeText }, modeText),
       ),
-      h('button.btn.btn-ghost.btn-xs', { style: { marginLeft: 'auto' }, onclick: () => window.app.goto('account') }, '管理'),
+      h('button.btn.btn-ghost.btn-xs', { style: { marginLeft: 'auto' }, onclick: () => { closeActiveFloat(); window.app.goto('account'); } }, '管理'),
     );
     playerChip.style.cursor = 'pointer';
     playerChip.addEventListener('click', (e) => {
