@@ -268,19 +268,19 @@ async function download(url, dest, opts = {}) {
       }
 
       if (want1 && /^[0-9a-f]{40}$/.test(want1) && (await sha1File(tmp)) !== want1) {
-        throw new Error(`SHA1 校验失败`);
+        const e = new Error('SHA1 校验失败'); e.contentError = true; e.noRetry = true; throw e;
       }
       if (want256 && /^[0-9a-f]{64}$/.test(want256) && (await sha256File(tmp)) !== want256) {
-        throw new Error(`SHA256 校验失败`);
+        const e = new Error('SHA256 校验失败'); e.contentError = true; e.noRetry = true; throw e;
       }
       if (minBytes && received < minBytes) {
         const e = new Error(`内容过小（${received} 字节），可能是错误页`);
-        e.noRetry = true;
+        e.noRetry = true; e.contentError = true;
         throw e;
       }
       if (expectZip && !isZipFile(tmp)) {
         const e = new Error('下载到的不是有效的 jar/zip，多半是镜像返回了错误页');
-        e.noRetry = true;
+        e.noRetry = true; e.contentError = true;
         throw e;
       }
       await fsp.rename(tmp, dest);
@@ -297,7 +297,7 @@ async function download(url, dest, opts = {}) {
       lastErr = e;
       // 保留已下载部分用于续传；只有内容级错误才删除
       try {
-        if (e && e.noRetry) await fsp.unlink(tmp);
+        if (e && (e.noRetry || e.contentError)) { await fsp.unlink(tmp); resumeFrom = 0; }
         else { const st = await fsp.stat(tmp); resumeFrom = st.size || 0; }
       } catch {}
       if (e && e.noRetry) break; // 4xx / 内容级错误：重试同一地址无意义
@@ -333,7 +333,7 @@ async function downloadLarge(url, dest, opts = {}) {
 
   await fsp.mkdir(path.dirname(dest), { recursive: true }); // 目录可能还不存在（新库目录）
 
-  const parts = Math.min(16, Math.max(4, Math.ceil(total / (1536 * 1024))));
+  const parts = Math.min(6, Math.max(2, Math.ceil(total / (4 * 1024 * 1024))));
   const slice = Math.ceil(total / parts);
   const tmpParts = [];
   const errors = [];
@@ -354,6 +354,7 @@ async function downloadLarge(url, dest, opts = {}) {
     tmpParts[i] = partPath;
     let got = 0;
     for (let attempt = 0; attempt < 2 && got !== end - start + 1; attempt++) {
+      got = 0; // 每次尝试重新写整片，避免 w 截断后仍按旧偏移写入
       try {
         const controller = new AbortController();
         if (extSignal) { const onAbort = () => controller.abort(new Error('已取消')); if (extSignal.aborted) onAbort(); else extSignal.addEventListener('abort', onAbort, { once: true }); }

@@ -1,18 +1,18 @@
 {
-  "version": "1.2.5",
-  "notes": "1.2.5：新增域内快捷进服与启动反馈遮罩；下载默认优先官方源并跳过轮转日志；整合包导入支持自定义实例名、底座合并为单目录、下载断点续传与分片加速；实例列表随目录变化自动刷新。",
+  "version": "1.2.6",
+  "notes": "1.2.6：修复大文件分片重试写入偏移导致的下载损坏（SHA-1 校验失败）；内容级错误不再续传坏文件。",
   "assets": [
     {
-      "name": "SWUSTMCL-1.2.5-win-x64.zip",
-      "size": 124732141,
-      "sha256": "06d561c4f4b800eb992245e6639923de46112745ee97d6f62b20f8f8866374a3",
-      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.5/SWUSTMCL-1.2.5-win-x64.zip"
+      "name": "SWUSTMCL-1.2.6-win-x64.zip",
+      "size": 124732381,
+      "sha256": "e539e3f8745c9726b09aff5955e6ab7f2cda9da637b0f9237fada9a34b27e40c",
+      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.6/SWUSTMCL-1.2.6-win-x64.zip"
     },
     {
-      "name": "SWUSTMCL-1.2.5-Setup-x64.exe",
-      "size": 94409759,
-      "sha256": "e3360929f1c06cfcc976f6bdbe6eec660cf3e02eb9df31cdc125660a1de9379a",
-      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.5/SWUSTMCL-1.2.5-Setup-x64.exe"
+      "name": "SWUSTMCL-1.2.6-Setup-x64.exe",
+      "size": 94410002,
+      "sha256": "9c7b703b2803f9fac76d74fb8ee5bd32ce04dcee7e171fd41658504b32c0b200",
+      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.6/SWUSTMCL-1.2.6-Setup-x64.exe"
     }
   ]
 }
