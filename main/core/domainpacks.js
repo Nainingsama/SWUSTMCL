@@ -152,7 +152,7 @@ async function collectFiles(instanceDir, instanceId) {
         continue;
       }
       if (!entry.isFile()) continue;
-      if (SKIP_FILES.has(entry.name) || /\.log$/i.test(entry.name)) continue;
+      if (SKIP_FILES.has(entry.name) || /\.log(\.\d+)?(\.gz)?$/i.test(entry.name)) continue;
       if (!relBase && (entry.name === `${instanceId}.json` || entry.name === `${instanceId}.jar`)) continue;
       const full = path.join(current, entry.name);
       let stat;
@@ -488,7 +488,7 @@ async function installPack({ domainId, packId, serverId, mcDir, instanceId, onPr
   const oldMarker = readMarker(instanceDir);
   const versionJson = pack.instance && pack.instance.versionJson;
   if (!versionJson || typeof versionJson !== 'object') throw new Error('整合包缺少版本配置，无法安装');
-  const source = settingsLib.all().downloadSource === 'mojang' ? 'mojang' : 'bmcl';
+  const source = settingsLib.all().downloadSource === 'bmcl' ? 'bmcl' : 'mojang';
   if (onProgress) onProgress({ stage: 'base', message: '正在准备基础版本与依赖…', percent: 1 });
   await installLib.install(id, { meta: { ...versionJson }, mcDir: targetMcDir }, source, (p) => {
     if (onProgress) onProgress({ stage: 'base', message: p.message || '正在安装基础版本…', percent: p.percent || 0 });
@@ -535,7 +535,7 @@ async function installVanilla({ mcVersion, onProgress }) {
   const entry = (manifest.versions || []).find((version) => version.id === mc);
   if (!entry) throw new Error(`版本清单里找不到 ${mc}`);
   const dir = settingsLib.ensureGameDir();
-  const source = settingsLib.all().downloadSource === 'mojang' ? 'mojang' : 'bmcl';
+  const source = settingsLib.all().downloadSource === 'bmcl' ? 'bmcl' : 'mojang';
   await installLib.install(mc, entry, source, (p) => {
     if (onProgress) onProgress({ stage: 'vanilla', message: p.message || '正在安装原版…', percent: p.percent || 0 });
   });

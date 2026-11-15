@@ -278,7 +278,7 @@
       seg('mojang', '尽量官方'),
     );
     function seg(v, label) {
-      return h(`button.seg-item.${(s.downloadSource || 'bmcl') === v ? 'active' : ''}`, {
+      return h(`button.seg-item.${(s.downloadSource || 'auto') === v ? 'active' : ''}`, {
         onclick: (e) => {
           srcSeg.querySelectorAll('.seg-item').forEach((x) => x.classList.toggle('active', x === e.currentTarget));
           set({ downloadSource: v });
@@ -289,7 +289,7 @@
     return h('div.card', null,
       h('div.card-head', null, h('div.card-title', null, '网络')),
       h('div.card-body', null,
-        row('下载源', '智能选择 = 官方优先，加载缓慢或失败自动切换镜像源；清单获取始终双源竞速', srcSeg, true),
+        row('下载源', '智能选择 = 官方优先，失败时自动切换镜像源；清单获取始终双源竞速', srcSeg, true),
         row('DoH 加速解析', '域名被污染 / 解析异常时开启（DNS over HTTPS · 阿里公共 DNS）', dohSwitch),
         cfKeyRow(s),
       ),

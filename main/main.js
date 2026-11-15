@@ -829,7 +829,7 @@ ipcMain.handle('install:start', async (_e, payload) => {
   if (!core.safe.isHttpUrl(url)) throw new Error('版本元数据地址无效');
   requireIdle('install', '安装');
   busy.install = id;
-  const source = settingsLib.all().downloadSource || 'bmcl';
+  const source = settingsLib.all().downloadSource === 'bmcl' ? 'bmcl' : 'mojang';
   try {
     const r = await core.install.install(id, { url }, source, (p) => send('install:progress', p));
     return r;
@@ -929,7 +929,7 @@ ipcMain.handle('game:launch', async (_e, payload) => {
       await core.repair.fix(dir, id, (p) => {
         const pct = Math.min(99, Math.round((p.done / Math.max(1, p.total)) * 100));
         send('install:progress', { id, stage: 'preflight', message: `补全依赖 ${p.done}/${p.total}`, percent: pct });
-      }, s.downloadSource === 'mojang' ? 'mojang' : 'bmcl');
+      }, s.downloadSource === 'bmcl' ? 'bmcl' : 'mojang');
       const after = core.repair.check(dir, id);
       if (!after.ok) {
         throw new Error(`实例依赖不完整（仍缺 ${after.missing.length} 个文件），自动补全未成功——请到「版本管理 → 体检」检查网络后重试`);
@@ -1107,7 +1107,7 @@ ipcMain.handle('loader:install', async (_e, payload) => {
   const instanceId = payload && payload.instanceId ? core.safe.assertVersionId(String(payload.instanceId)) : '';
   requireIdle('loader', '加载器安装');
   busy.loader = loader;
-  const source = settingsLib.all().downloadSource || 'bmcl';
+  const source = settingsLib.all().downloadSource === 'bmcl' ? 'bmcl' : 'mojang';
   try {
     const r = await core.loaders.install(loader, mc, loaderVersion, instanceId, source, (p) => send('loader:progress', { loader, ...p }));
     return r;
@@ -1148,10 +1148,10 @@ ipcMain.handle('modpack:install', async (_e, payload) => {
         const manifest = await core.versions.getManifest();
         const entry = (manifest.versions || []).find((v) => v.id === mc);
         if (!entry) throw new Error(`版本清单里找不到 ${mc}`);
-        return core.install.install(mc, entry, settingsLib.all().downloadSource || 'bmcl', onProgress);
+        return core.install.install(mc, entry, (settingsLib.all().downloadSource === 'bmcl' ? 'bmcl' : 'mojang'), onProgress);
       },
       installLoader: async (loader, mc, lv, instanceId, onProgress) => {
-        await core.loaders.install(loader, mc, lv, instanceId, settingsLib.all().downloadSource || 'bmcl', onProgress);
+        await core.loaders.install(loader, mc, lv, instanceId, (settingsLib.all().downloadSource === 'bmcl' ? 'bmcl' : 'mojang'), onProgress);
       },
     });
     // 校验依赖完整性

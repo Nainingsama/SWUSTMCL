@@ -33,7 +33,7 @@ const DEFAULTS = {
   memory: 4096,
   autoMemory: false, // 自动分配内存（物理内存 35%，2048~8192）
   autoFreeMemory: true, // 启动游戏前自动优化内存（整理工作集）
-  downloadSource: 'bmcl', // bmcl | mojang
+  downloadSource: 'auto', // auto（官方优先） | bmcl | mojang
   downloadThreads: 16,
   doh: false, // DoH（DNS over HTTPS）：域名被污染/解析异常时开启
   playerName: 'Steve',
