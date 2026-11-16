@@ -485,6 +485,28 @@ app.whenReady().then(async () => {
     if (app.isPackaged) {
       const exe = process.execPath;
       const lnk = path.join(app.getPath('desktop'), '星启 STMCL.lnk');
+      // 清理旧品牌 / 指向已改名 exe 的历史快捷方式（含无空格旧名）
+      try {
+        const desk = app.getPath('desktop');
+        for (const f of fs.readdirSync(desk)) {
+          if (!/\.lnk$/i.test(f)) continue;
+          const p = path.join(desk, f);
+          let legacy = /SWUSTMCL/i.test(f);
+          if (!legacy) {
+            try { const sc = shell.readShortcutLink(p); legacy = /\\SWUSTMCL\.exe$/i.test(String((sc && sc.target) || '')); } catch {}
+          }
+          if (legacy) { try { fs.unlinkSync(p); log.info('已删除旧快捷方式：' + f); } catch {} }
+        }
+      } catch {}
+      // 开始菜单里的旧快捷方式同样清理
+      try {
+        const sm = path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs');
+        for (const f of fs.readdirSync(sm)) {
+          if (/SWUSTMCL/i.test(f) && /\.lnk$/i.test(f)) {
+            try { fs.unlinkSync(path.join(sm, f)); log.info('已删除旧开始菜单项：' + f); } catch {}
+          }
+        }
+      } catch {}
       const ico = path.join(path.dirname(exe), 'icon.ico');
       try {
         shell.writeShortcutLink(lnk, 'create', {
