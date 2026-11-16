@@ -224,6 +224,7 @@ async function download(url, dest, opts = {}) {
     if (st.isFile() && st.size > 0 && (!expectedSize || st.size < expectedSize)) resumeFrom = st.size;
   } catch {}
 
+  if (resumeFrom > 0 && onBytes) { try { onBytes(resumeFrom); } catch {} }
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
     throwIfAborted();
@@ -343,6 +344,14 @@ async function downloadLarge(url, dest, opts = {}) {
   const cleanup = async () => {
     for (const p of tmpParts) { try { await fsp.unlink(p); } catch {} }
   };
+  // 续传：已存在的分片计入进度（否则界面会显示 0.0 MB）
+  try {
+    for (let i = 0; i < parts; i++) {
+      const p = `${dest}.part${i}`;
+      const st = await fsp.stat(p).catch(() => null);
+      if (st && st.size > 0 && opts.onBytes) opts.onBytes(st.size);
+    }
+  } catch {}
 
   try {
   await pool(Array.from({ length: parts }, (_, i) => i), parts, async (i) => {
@@ -356,7 +365,7 @@ async function downloadLarge(url, dest, opts = {}) {
     let got = 0;
     let lastErr = null;
     await new Promise((r) => setTimeout(r, i * 120)); // 错峰建连，避免一次性打满被 CDN 排队
-    for (let attempt = 0; attempt < 6 && got < need; attempt++) {
+    for (let attempt = 0; attempt < 14 && got < need; attempt++) {
       let connectTimer = null;
       try {
         const controller = new AbortController();
@@ -396,8 +405,9 @@ async function downloadLarge(url, dest, opts = {}) {
         if ((e && /已取消/.test(e.message)) || (extSignal && extSignal.aborted)) { const e2 = new Error('已取消'); e2.aborted = true; throw e2; }
         if (rangeUnsupported) return;
         lastErr = e;
-        if (got === 0 && /stall|timeout|abort/i.test(String(e.message)) && attempt >= 2) break;
-        await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+        // 分片失败只重试本片（保留已收字节）；连续 5 次一个字节都没收到视为死链
+        if (got === 0 && attempt >= 4 && /stall|timeout|abort/i.test(String(e.message))) break;
+        await new Promise((r) => setTimeout(r, Math.min(4000, 300 * (attempt + 1))));
       }
     }
     if (got < need) errors.push(`分片${i}: ${lastErr ? lastErr.message : '未完成'}`);
