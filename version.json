@@ -1,18 +1,18 @@
 {
-  "version": "1.2.8",
-  "notes": "1.2.8：实例列表按文件夹分组、底座按钮可切换；修复域切换不全局生效、导入 latest 加载器 404、失败/取消任务卡卡住、合并实例丢失 classpath、同名实例串目录；大文件下载大幅提速。",
+  "version": "1.2.9",
+  "notes": "1.2.9：新增「从最近的项目开始」、首页固定布局与运行状态合并；修复快速切页内容叠加、Fabric 整合包缺 Fabric API 无法启动、卡片底部裁切与日历空隙。",
   "assets": [
     {
-      "name": "STMCL-1.2.8-win-x64.zip",
-      "size": 124717275,
-      "sha256": "33e29c61150a393d97707fb6e79ccebd242c0c2331a9ff4282de4e1fff9cd6b0",
-      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.8/STMCL-1.2.8-win-x64.zip"
+      "name": "STMCL-1.2.9-win-x64.zip",
+      "size": 124717453,
+      "sha256": "57e342fea9998d420bf88b9066cbd33ee643f1a87d261b82b66c2c1ee407275a",
+      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.9/STMCL-1.2.9-win-x64.zip"
     },
     {
-      "name": "STMCL-1.2.8-Setup-x64.exe",
-      "size": 94412817,
-      "sha256": "597e434dcbf8f7b29080b432439720f3d973535e83c575c7feb875bddff51322",
-      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.8/STMCL-1.2.8-Setup-x64.exe"
+      "name": "STMCL-1.2.9-Setup-x64.exe",
+      "size": 94412854,
+      "sha256": "ecbd34e0adbb86a2d0eda137d613478b47774e515f608179a17f7d3e8ed6f29e",
+      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.9/STMCL-1.2.9-Setup-x64.exe"
     }
   ]
 }
