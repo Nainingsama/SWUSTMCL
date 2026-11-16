@@ -125,10 +125,17 @@
       }
     },
 
-    /** 域切换后重新渲染当前页（保留当前视图，不触发页面切换动画） */
+    /** 域切换后重绘当前页，并让其它页面失效，下次进入时按新域重新渲染 */
     reloadView() {
       const next = document.querySelector(`.view[data-view="${this.current}"]`);
       const page = Pages[this.current];
+      // 其它页面先清空并取消「已渲染」标记：否则切过去仍是旧域的内容，必须再切一次域才会刷新
+      document.querySelectorAll('.view[data-view]').forEach((view) => {
+        if (view.dataset.view === this.current) return;
+        if (!view.dataset.rendered) return;
+        window.Dom.clear(view);
+        delete view.dataset.rendered;
+      });
       if (!next || !page || !page.render) return;
       window.Dom.clear(next);
       try {
