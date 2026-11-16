@@ -44,9 +44,17 @@
     try { activeFloat.close(); } catch {}
   }
 
+  const instKey = (v) => (v && v.dir ? v.dir : '') + '|' + (v ? v.id : '');
+  const parseInstKey = (key) => {
+    const s = String(key || '');
+    const i = s.indexOf('|');
+    return i >= 0 ? { dir: s.slice(0, i), id: s.slice(i + 1) } : { dir: '', id: s };
+  };
+
   function instanceLabel(select) {
     const list = window.Store.state.installed || [];
-    const cur = list.find((v) => v.id === (select && select.value));
+    const want = parseInstKey(select && select.value);
+    const cur = list.find((v) => v.id === want.id && (!want.dir || v.dir === want.dir));
     if (!cur) return '（暂无实例）';
     return cur.id + (cur.loader && cur.loader !== '原版' ? ' · ' + cur.loader : '');
   }
@@ -66,7 +74,7 @@
   function openInstancePicker(anchor, select) {
     const list = window.Store.state.installed || [];
     if (!list.length) { window.Toast.warn('还没有可启动的实例，先去「下载游戏」装一个吧'); return; }
-    let chosen = select.value || (list[0] && list[0].id);
+    let chosen = select.value || instKey(list[0]);
     const search = h('input.input', { placeholder: '搜索实例…', oninput: () => draw() });
     const rowsBox = h('div.inst-list');
     const panel = h('div.inst-picker');
@@ -75,16 +83,16 @@
       const q = search.value.trim().toLowerCase();
       const rows = list.filter((v) => !q || v.id.toLowerCase().includes(q) || String(v.mcVersion || '').toLowerCase().includes(q));
       for (const v of rows) {
-        rowsBox.append(h('div.inst-row' + (v.id === chosen ? '.chosen' : ''), {
+        rowsBox.append(h('div.inst-row' + (instKey(v) === chosen ? '.chosen' : ''), {
           onclick: () => {
-            chosen = v.id;
-            select.value = v.id;
-            window.Store.set({ homeVersionId: v.id });
+            chosen = instKey(v);
+            select.value = instKey(v);
+            window.Store.set({ homeVersionId: v.id, homeVersionDir: v.dir || '' });
             if (els.versionTrigger) els.versionTrigger.textContent = instanceLabel(select);
             draw();
           },
         },
-          h('span.inst-radio' + (v.id === chosen ? '.on' : '')),
+          h('span.inst-radio' + (instKey(v) === chosen ? '.on' : '')),
           h('span.loader-mini', { style: { width: '20px', flex: 'none' }, innerHTML: window.LoaderIcon.svg(v.loader, 18) }),
           h('div.grow', { style: { minWidth: 0 } },
             h('div.inst-id.ellipsis', null, v.id),
@@ -101,7 +109,8 @@
       onclick: async () => {
         close();
         select.value = chosen;
-        window.Store.set({ homeVersionId: chosen });
+        const pick = parseInstKey(chosen);
+        window.Store.set({ homeVersionId: pick.id, homeVersionDir: pick.dir });
         if (els.versionTrigger) els.versionTrigger.textContent = instanceLabel(select);
         await doLaunch(els.launchBtn);
       },
@@ -927,7 +936,7 @@
     const versionSelect = h('select.select', {
       id: 'homeVersion',
       style: { display: 'none' },
-      onchange: () => window.Store.set({ homeVersionId: versionSelect.value }),
+      onchange: () => { const p = parseInstKey(versionSelect.value); window.Store.set({ homeVersionId: p.id, homeVersionDir: p.dir }); },
     });
     fillVersions(versionSelect);
     const versionTrigger = h('button.btn.version-trigger', {
@@ -1315,17 +1324,20 @@
       select.append(h('option', { value: '' }, '（暂无实例，请先下载）'));
       return;
     }
-    const preferred = window.Store.get('homeVersionId');
-    const hit = list.find((v) => v.id === preferred);
+    const preferredId = window.Store.get('homeVersionId');
+    const preferredDir = window.Store.get('homeVersionDir') || '';
+    const hit = list.find((v) => v.id === preferredId && (!preferredDir || v.dir === preferredDir)) || list.find((v) => v.id === preferredId);
     for (const v of list) {
-      select.append(h('option', { value: v.id }, `${v.id}${v.loader !== '原版' ? ` · ${v.loader}` : ''}${v.dirName !== '主目录' ? `（${v.dirName}）` : ''}`));
+      select.append(h('option', { value: instKey(v), dataset: { id: v.id, dir: v.dir || '' } }, `${v.id}${v.loader !== '原版' ? ` · ${v.loader}` : ''}${v.dirName !== '主目录' ? `（${v.dirName}）` : ''}`));
     }
-    select.value = (hit || list[0]).id;
-    window.Store.set({ homeVersionId: select.value });
+    const first = hit || list[0];
+    select.value = instKey(first);
+    window.Store.set({ homeVersionId: first.id, homeVersionDir: first.dir || '' });
   }
 
   async function doLaunch(btn) {
-    const id = els.versionSelect.value;
+    const pick = parseInstKey(els.versionSelect.value);
+    const id = pick.id;
     if (!id) {
       window.Toast.warn('还没有可启动的实例，先去「下载游戏」装一个吧');
       return;
@@ -1336,7 +1348,7 @@
       window.app.goto('account');
       return;
     }
-    const inst = (window.Store.state.installed || []).find((v) => v.id === id);
+    const inst = (window.Store.state.installed || []).find((v) => v.id === id && (!pick.dir || v.dir === pick.dir)) || (window.Store.state.installed || []).find((v) => v.id === id);
     setLaunching(btn, true, '启动中…');
     try {
       // 启动前自动补全缺失依赖（jar 损坏检测在主进程 repair.check 里）

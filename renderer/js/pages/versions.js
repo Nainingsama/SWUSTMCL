@@ -252,7 +252,8 @@
       }
     }
     const launchTargetId = window.Store.get('homeVersionId') || (all[0] && all[0].id);
-    const sel = all.find((v) => v.id === launchTargetId);
+    const launchTargetDir = window.Store.get('homeVersionDir') || '';
+    const sel = all.find((v) => v.id === launchTargetId && (!launchTargetDir || v.dir === launchTargetDir)) || all.find((v) => v.id === launchTargetId);
     const viewSeg = h('div.seg', null,
       h('button.seg-item' + (viewMode === 'grid' ? '.active' : ''), { title: '网格视图', onclick: () => { viewMode = 'grid'; localStorage.setItem('swustmcl.versionsView', viewMode); drawAll(); } }, svgIcon('grid', 15)),
       h('button.seg-item' + (viewMode === 'list' ? '.active' : ''), { title: '列表视图', onclick: () => { viewMode = 'list'; localStorage.setItem('swustmcl.versionsView', viewMode); drawAll(); } }, svgIcon('list', 15)),
@@ -353,9 +354,11 @@
   }
 
   function tileOf(v) {
-    const isSel = v.id === (window.Store.get('homeVersionId') || '');
+    const hv = window.Store.get('homeVersionId') || '';
+    const hd = window.Store.get('homeVersionDir') || '';
+    const isSel = v.id === hv && (!hd || v.dir === hd);
     return h('div.card.hoverable.ver-tile' + (isSel ? '.selected' : ''), {
-      onclick: () => { window.Store.set({ homeVersionId: v.id }); drawAll(); },
+      onclick: () => { window.Store.set({ homeVersionId: v.id, homeVersionDir: v.dir || '' }); drawAll(); },
       ondblclick: (e) => { if (e.target.closest('button, a, input, select')) return; launchOne(v); },
     },
       h('span.inst-radio' + (isSel ? '.on' : ''), { style: { position: 'absolute', left: '12px', top: '12px' } }),
@@ -373,9 +376,11 @@
   }
 
   function rowOf(v) {
-    const isSel = v.id === (window.Store.get('homeVersionId') || '');
+    const hv = window.Store.get('homeVersionId') || '';
+    const hd = window.Store.get('homeVersionDir') || '';
+    const isSel = v.id === hv && (!hd || v.dir === hd);
     return h('div.ver-row' + (isSel ? '.selected' : ''), {
-      onclick: () => { window.Store.set({ homeVersionId: v.id }); drawAll(); },
+      onclick: () => { window.Store.set({ homeVersionId: v.id, homeVersionDir: v.dir || '' }); drawAll(); },
       ondblclick: (e) => { if (e.target.closest('button, a, input, select')) return; launchOne(v); },
     },
       h('span.inst-radio' + (isSel ? '.on' : '')),
@@ -786,7 +791,7 @@
       h('button.iconbtn', { title: '移入回收站', style: { color: '#ff6369' }, onclick: () => deleteOne(v) }, svgIcon('trash', 15)),
       h('button.btn.btn-sm.pressable', {
         title: '把该实例设为首页启动实例',
-        onclick: () => { window.Store.set({ homeVersionId: v.id }); window.Toast.success('已设为启动实例：' + (v.displayName || v.id)); },
+        onclick: () => { window.Store.set({ homeVersionId: v.id, homeVersionDir: v.dir || '' }); window.Toast.success('已设为启动实例：' + (v.displayName || v.id)); },
       }, '设为启动实例'),
       h('button.btn.btn-primary.btn-sm.pressable', { onclick: () => launchOne(v) }, svgIcon('play', 14), '启动实例'),
     ));
