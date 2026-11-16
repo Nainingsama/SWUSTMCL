@@ -213,10 +213,10 @@ async function importPack(file, info, hooks = {}) {
     } else {
       log.info(`底座 ${info.mcVersion} 已存在，跳过`);
     }
-    if (info.loader && info.loaderVersion && hooks.installLoader) {
+    if (info.loader && hooks.installLoader) {
       report({ stage: 'loader', message: `安装 ${info.loader} ${info.loaderVersion}`, percent: 46 });
       await hooks.installLoader(
-        info.loader.toLowerCase(), info.mcVersion, info.loaderVersion,
+        info.loader.toLowerCase(), info.mcVersion, info.loaderVersion || 'latest',
         instanceId,
         (p) => report({ ...p, stage: 'loader', percent: 46 + Math.min(24, Math.round((p.percent || 0) * 0.24)) })
       );

@@ -1271,6 +1271,7 @@ ipcMain.handle('modpack:install', async (_e, payload) => {
     // 导入失败/取消：清掉这次新建的半成品实例目录，避免留下 26.3-BINGO / (2)
     // 取消/中断：保留目录与已下载的 .part，下次同名导入可续传（列表里不会显示）
     if (createdDir) log.info('导入已中断，保留用于续传：' + createdDir);
+    try { send('modpack:progress', { name: info.name, cancelKey: 'modpack', stage: e && e.aborted ? 'cancelled' : 'failed', message: String((e && e.message) || e), percent: 100 }); } catch {}
     if (e && e.aborted) throw new Error('已取消导入');
     throw e;
   } finally {

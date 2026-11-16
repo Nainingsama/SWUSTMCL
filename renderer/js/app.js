@@ -432,6 +432,12 @@
     const taskFrom = (nameFn, srcFn) => (p) => {
       const name = typeof nameFn === 'function' ? nameFn(p) : nameFn;
       const source = typeof srcFn === 'function' ? srcFn(p) : (srcFn || '本地');
+      if (p.stage === 'failed' || p.stage === 'cancelled') {
+        const cancelled = p.stage === 'cancelled';
+        Tasks.fail(name, cancelled ? '已取消' : (p.message || '失败'));
+        TaskCard.finish(false, cancelled ? '已取消' : '导入失败');
+        return;
+      }
       Tasks.update(name, source, p);
       TaskCard.show(name);
       TaskCard.update(p);

@@ -196,7 +196,24 @@ async function installFabricQuilt(loader, mc, loaderVersion, instanceId, source,
   const report = (p) => onProgress && onProgress(p);
   report({ stage: 'meta', message: `获取 ${loader} 配置`, percent: 10 });
 
-  const metaUrl = loader === 'fabric' ? FABRIC_META(mc, loaderVersion) : QUILT_META(mc, loaderVersion);
+  // 整合包可能只写 "latest" 或不写加载器版本：先查可用列表取最新，再请求 profile
+  let lv = String(loaderVersion || '');
+  if (!lv || lv === 'latest') {
+    const listUrl = loader === 'fabric'
+      ? 'https://meta.fabricmc.net/v2/versions/loader/' + encodeURIComponent(mc)
+      : 'https://meta.quiltmc.org/v3/versions/loader/' + encodeURIComponent(mc);
+    let list = null;
+    try { list = await net.fetchJson(listUrl, { timeout: 12000 }); } catch {
+      const alt = loader === 'fabric'
+        ? listUrl.replace('meta.fabricmc.net', 'bmclapi2.bangbang93.com/fabric-meta')
+        : listUrl.replace('meta.quiltmc.org', 'bmclapi2.bangbang93.com/quilt-meta');
+      try { list = await net.fetchJson(alt, { timeout: 20000 }); } catch {}
+    }
+    lv = (Array.isArray(list) && list[0] && list[0].loader && list[0].loader.version) || '';
+    if (!lv) throw new Error('无法获取 ' + loader + ' 针对 ' + mc + ' 的可用版本');
+    report({ stage: 'meta', message: '使用 ' + loader + ' ' + lv, percent: 15 });
+  }
+  const metaUrl = loader === 'fabric' ? FABRIC_META(mc, lv) : QUILT_META(mc, loaderVersion);
   let profile;
   try {
     profile = await net.fetchJson(metaUrl, { timeout: 12000 });
