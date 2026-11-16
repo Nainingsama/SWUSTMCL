@@ -230,7 +230,7 @@
   }
 
   // ------------------------------------------------------------ 首页组件化（拖拽 / 缩放 / 刷新）
-  const HOME_WIDGET_KEY = 'swustmcl.homeLayout.v13'; // 仅保存手动拖动/缩放的组件 // x/w 存比例，y/h 存像素
+  const HOME_WIDGET_KEY = 'swustmcl.homeLayout.v14'; // 仅保存手动拖动/缩放的组件 // x/w 存比例，y/h 存像素
   const W_MIN = { w: 260, h: 150 };
   const W_MAX = { w: 920, h: 820 };
   // 每类组件单独的最大尺寸：启动卡不需要拉太大，日历/服务器更能吃空间
@@ -318,51 +318,41 @@
     return holders;
   }
 
-  function mountWidgets(canvas, widgets) {
-    const domainLayout = domainHomeLayout();
-    if (domainLayout) return mountDomainWidgets(canvas, widgets, domainLayout);
-    let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(HOME_WIDGET_KEY) || '{}') || {}; } catch {}
+  /** 固定首页布局：不再支持拖动/缩放，窗口变化时按列宽重算 */
+  function fixedLayout(canvas) {
     const width = Math.max(640, canvas.clientWidth || 900);
     const gap = 16;
-    // 三列默认：全部尺寸按画布宽度比例（x/y/w/h 同比例缩放，任何窗口下版式一致）
-    const col1 = Math.round(width * 0.49);
-    const col2 = Math.round(width * 0.235);
-    const col3 = Math.max(240, width - col1 - col2 - gap * 2);
-    // 紧凑默认：宽度按列比例，高度固定像素（大窗口下不会被等比放大成巨块）
     const c1 = Math.round((width - gap * 2) * 0.49);
     const c2 = Math.round((width - gap * 2) * 0.255);
     const c3 = Math.max(260, width - gap * 2 - c1 - c2);
     const x1 = 0;
     const x2 = c1 + gap;
     const x3 = x2 + c2 + gap;
-    const def = {
+    return {
       launch: { x: x1, y: 0, w: c1, h: 360 },
       clock: { x: x2, y: 0, w: c2, h: 280 },
       calendar: { x: x3, y: 0, w: c3, h: 440 },
       announce: { x: x2, y: 296, w: c2, h: 200 },
       servers: { x: x1, y: 376, w: c1, h: 330 },
-      status: { x: x2, y: 512, w: c2, h: 300 }, // 运行环境：公告正下方（中列）
+      status: { x: x2, y: 512, w: c2 + gap + c3, h: 240 },
       running: { x: x1, y: 716, w: c1, h: 86 },
     };
-    void col1; void col2; void col3;
+  }
+
+  function mountWidgets(canvas, widgets) {
+    const domainLayout = domainHomeLayout();
+    if (domainLayout) return mountDomainWidgets(canvas, widgets, domainLayout);
+    const def = fixedLayout(canvas);
     const holders = {};
     for (const w of widgets) {
-      const sv = saved[w.id] || {};
       const d = def[w.id] || { x: 0, y: 0, w: 320, h: 240 };
-      // x/w 可能存的是相对比例（0~1）：换算成当前宽度下的像素；y/h 直接用像素
-      const pos = {
-        x: sv.x != null && sv.x <= 1 ? sv.x * width : (sv.x != null ? sv.x : d.x),
-        w: sv.w != null && sv.w <= 1 ? sv.w * width : (sv.w != null ? sv.w : d.w),
-        y: sv.y != null ? sv.y : d.y,
-        h: sv.h != null ? sv.h : d.h,
-      };
       const mx = maxOf(w.id);
-      // 启动卡至少留出完整显示内存条与启动按钮的高度；运行环境至少能完整显示四项
-      if (w.id === 'launch') pos.h = Math.max(pos.h, 350);
-      if (w.id === 'status') pos.h = Math.max(pos.h, 200);
-      pos.w = clampNum(pos.w, W_MIN.w, mx.w);
-      pos.h = clampNum(pos.h, W_MIN.h, mx.h);
+      const pos = {
+        x: d.x,
+        y: d.y,
+        w: clampNum(d.w, W_MIN.w, mx.w),
+        h: clampNum(d.h, W_MIN.h, mx.h),
+      };
       const card = w.card;
       card.classList.add('widget-card');
       let head = card.querySelector('.card-head');
@@ -375,16 +365,13 @@
         head.append(h('div.card-title', null, w.title));
       }
       head.classList.add('widget-head');
-      head.insertBefore(h('span.widget-grip', { title: '按住拖动' }, '⠿'), head.firstChild);
       head.append(h('button.iconbtn', { title: '刷新', onclick: (e) => { e.stopPropagation(); if (w.refresh) w.refresh(); } }, '↻'));
       const holder = h('div.home-widget', { style: { left: pos.x + 'px', top: pos.y + 'px', width: pos.w + 'px', height: pos.h + 'px' } });
       holder.dataset.widget = w.id;
       if (w.hidden) holder.style.display = 'none';
-      holder.append(card, h('div.widget-resize', { title: '拖动缩放（有最大/最小限制）' }));
+      holder.append(card);
       canvas.append(holder);
       holders[w.id] = holder;
-      bindDrag(canvas, holder, head);
-      bindResize(canvas, holder, holder.querySelector('.widget-resize'));
     }
     updateCanvasHeight(canvas);
 
@@ -561,26 +548,17 @@
       applyDomainLayout(canvas, canvas.__domainLayout);
       return;
     }
-    let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(HOME_WIDGET_KEY) || '{}') || {}; } catch {}
-    const cw = Math.max(640, canvas.clientWidth || 900);
+    const def = fixedLayout(canvas);
     for (const el of canvas.querySelectorAll('.home-widget')) {
-      const sv = saved[el.dataset.widget];
-      if (!sv || sv.x == null || sv.w == null) continue;
+      const d = def[el.dataset.widget];
+      if (!d) continue;
       const mx = maxOf(el.dataset.widget);
-      const left = clampNum((sv.x <= 1 ? sv.x * cw : sv.x), 0, Math.max(0, cw - 260));
-      const widthPx = clampNum((sv.w <= 1 ? sv.w * cw : sv.w), W_MIN.w, Math.min(mx.w, cw - left));
-      el.style.left = Math.round(left) + 'px';
-      el.style.width = Math.round(widthPx) + 'px';
-      if (sv.y != null) el.style.top = Math.round(sv.y) + 'px';
-      if (sv.h != null) {
-        let h = clampNum(sv.h, W_MIN.h, mx.h);
-        if (el.dataset.widget === 'launch') h = Math.max(h, 350);
-        if (el.dataset.widget === 'status') h = Math.max(h, 200);
-        el.style.height = Math.round(h) + 'px';
-      }
+      el.style.left = Math.round(d.x) + 'px';
+      el.style.top = Math.round(d.y) + 'px';
+      el.style.width = Math.round(clampNum(d.w, W_MIN.w, mx.w)) + 'px';
+      el.style.height = Math.round(clampNum(d.h, W_MIN.h, mx.h)) + 'px';
     }
-    updateCanvasHeight(canvas); // 只读比例渲染，不回写（避免裁剪值累积导致布局漂移）
+    updateCanvasHeight(canvas);
   }
 
   // ------------------------------------------------------------ 时钟

@@ -50,8 +50,8 @@
 
 .status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 /* 运行环境卡片：紧凑排版，矮卡片也能完整显示四项；值过长时省略并用 title 展示全文 */
-.status-card .card-body { padding: 8px 12px; }
-.status-card .status-tile { padding: 8px 10px; gap: 3px; }
+.status-card .card-body { padding: 6px 12px; }
+.status-card .status-tile { padding: 7px 10px; gap: 3px; }
 .status-card .status-grid { grid-template-columns: 1fr 1fr; }
 .status-card .st-label { font-size: 11px; }
 .status-card .st-value { min-height: 18px; font-size: 12px; white-space: nowrap; overflow: hidden; }
