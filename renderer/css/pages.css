@@ -790,6 +790,12 @@ body.theme-light .res-instance-row > .field-hint {
 
 /* 公告卡片：窄卡片排版 */
 .announce-card .card-body { padding-top: 4px; }
+/* 内容超出时可滚动：底部留白 + 渐隐，避免文字贴死在卡片底边 */
+.announce-body {
+  padding-bottom: 26px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent 100%);
+}
 .announce-head { align-items: flex-start; padding: 10px 12px; }
 .announce-head .announce-date { font-size: 11px; opacity: 0.7; margin-top: 2px; font-weight: 400; }
 .announce-list { gap: 6px; margin-top: 10px; padding: 0 2px; }

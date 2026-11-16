@@ -64,7 +64,7 @@ function dirSize(p) {
 }
 
 async function main() {
-  log(`打包 星启 SWUSTMCL v${pkg.version}`);
+  log(`打包 星启 STMCL v${pkg.version}`);
 
   // 0. 前置检查：Electron 必须已安装（二进制已下载）
   const electronDist = path.join(root, 'node_modules', 'electron', 'dist');

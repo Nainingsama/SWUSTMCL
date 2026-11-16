@@ -1,18 +1,18 @@
 {
-  "version": "1.2.7",
-  "notes": "1.2.7：英文名改为 STMCL；皮肤站头像优先 sessionserver 公开纹理并修复缓存串号；整合包导入使用精确实例名、取消可中止并清理半成品。",
+  "version": "1.2.8",
+  "notes": "1.2.8：实例列表按文件夹分组、底座按钮可切换；修复域切换不全局生效、导入 latest 加载器 404、失败/取消任务卡卡住、合并实例丢失 classpath、同名实例串目录；大文件下载大幅提速。",
   "assets": [
     {
-      "name": "STMCL-1.2.7-win-x64.zip",
-      "size": 124736038,
-      "sha256": "aa936470340794785243c48ac3ffa17776bb247b63795d6befe0c1ab2a0b0b51",
-      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.7/STMCL-1.2.7-win-x64.zip"
+      "name": "STMCL-1.2.8-win-x64.zip",
+      "size": 124741046,
+      "sha256": "5e1f7a201b174a794dffd9c1a02b6e3f4a66cc06d077cb0fc276a31f5612faf3",
+      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.8/STMCL-1.2.8-win-x64.zip"
     },
     {
-      "name": "STMCL-1.2.7-Setup-x64.exe",
-      "size": 94412242,
-      "sha256": "631336eddf702b758f458da131b98235b412e00e3c405048338b23018f75b3e5",
-      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.7/STMCL-1.2.7-Setup-x64.exe"
+      "name": "STMCL-1.2.8-Setup-x64.exe",
+      "size": 94409798,
+      "sha256": "2ad60696897511b5bf4253346a0042b25c44e967cadc0fcd32bd940519ffdbb2",
+      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.8/STMCL-1.2.8-Setup-x64.exe"
     }
   ]
 }
