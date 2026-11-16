@@ -331,11 +331,10 @@
     return {
       launch: { x: x1, y: 0, w: c1, h: 360 },
       clock: { x: x2, y: 0, w: c2, h: 280 },
-      calendar: { x: x3, y: 0, w: c3, h: 440 },
+      calendar: { x: x3, y: 0, w: c3, h: 496 },
       announce: { x: x2, y: 296, w: c2, h: 200 },
       servers: { x: x1, y: 376, w: c1, h: 330 },
-      status: { x: x2, y: 512, w: c2 + gap + c3, h: 240 },
-      running: { x: x1, y: 716, w: c1, h: 86 },
+      recent: { x: x2, y: 512, w: c2 + gap + c3, h: 194 },
     };
   }
 
@@ -805,6 +804,109 @@
     });
   }
 
+  // ------------------------------------------------------------ 最近项目
+  function recentCard() {
+    const card = h('div.card.recent-card');
+    const body = h('div.card-body.recent-body', null, h('div.muted', null, '正在读取游玩记录…'));
+    card.append(body);
+
+    const relTime = (ms) => {
+      const diff = Date.now() - ms;
+      if (diff < 60000) return '刚刚';
+      const m = Math.floor(diff / 60000);
+      if (m < 60) return m + ' 分钟前';
+      const h = Math.floor(m / 60);
+      if (h < 24) return h + ' 小时前';
+      const d = Math.floor(h / 24);
+      if (d < 7) return d + ' 天前';
+      const w = Math.floor(d / 7);
+      if (w < 5) return w + ' 周前';
+      const date = new Date(ms);
+      return (date.getMonth() + 1) + '月' + date.getDate() + '日';
+    };
+
+    async function launchRecent(v) {
+      if (!v) return;
+      window.setLaunchTarget(v.id, v.dir);
+      try {
+        await window.LaunchFeedback.run(
+          () => window.smcl.launch(v.id, v.dir),
+          { title: '正在启动游戏…', success: '游戏启动成功' }
+        );
+        window.Store.set({ gameRunning: true });
+      } catch {}
+    }
+
+    function openMore(anchor, v) {
+      if (!v) return;
+      const panel = h('div.menu-panel.float-panel');
+      let close = () => {};
+      const item = (label, ic, fn) => h('button.menu-item', { onclick: () => { close(); fn(); } }, icon(ic, 15), label);
+      panel.append(
+        item('启动', 'play', () => launchRecent(v)),
+        item('打开文件夹', 'folder', () => window.smcl.openPath([v.dir, 'versions', v.id].join('\\')).catch((e) => window.Toast.error(e.message))),
+        item('实例详情', 'apps', () => window.Pages.versions && window.Pages.versions.openDetail(v)),
+        item('设为启动实例', 'cubes', () => { window.setLaunchTarget(v.id, v.dir); window.Toast.success('已设为启动实例：' + (v.displayName || v.id)); }),
+      );
+      close = openFloatPanel(anchor, panel);
+    }
+
+    async function draw() {
+      let sessions = [];
+      try { sessions = await window.smcl.historyList(); } catch { sessions = []; }
+      const installed = window.Store.get('installed') || [];
+      const latest = new Map();
+      for (const s of sessions) {
+        if (!s || !s.id) continue;
+        const key = s.id; // 同一实例的不同目录/旧记录合并为一项，取最近一次
+        const end = Number(s.end || s.start || 0);
+        const old = latest.get(key);
+        if (!old || end > old.end) latest.set(key, { id: s.id, dir: s.dir || '', end });
+      }
+      const rows = [...latest.values()].sort((a, b) => b.end - a.end).slice(0, 12);
+      window.Dom.clear(body);
+      if (!rows.length) {
+        body.append(h('div.recent-empty', null, '还没有游玩记录，启动一次游戏后会出现在这里。'));
+        return;
+      }
+      const list = h('div.recent-list');
+      for (const rec of rows) {
+        const v = installed.find((x) => x.id === rec.id && (!rec.dir || x.dir === rec.dir)) || installed.find((x) => x.id === rec.id);
+        const name = v ? (v.displayName || v.id) : rec.id;
+        const sub = '上次游玩于 ' + relTime(rec.end) + (v && v.mcVersion ? ' · ' + v.mcVersion : '');
+        const playBtn = h('button.recent-play.iconbtn', {
+          title: v ? '启动 ' + name : '实例已不存在',
+          disabled: !v,
+          onclick: (e) => { e.stopPropagation(); launchRecent(v); },
+        }, icon('play', 16));
+        const moreBtn = h('button.iconbtn.recent-more', {
+          title: '更多操作',
+          onclick: (e) => { e.stopPropagation(); openMore(e.currentTarget, v); },
+        }, '⋯');
+        const iconEl = h('span.recent-icon');
+        if (v && window.LoaderIcon) iconEl.innerHTML = window.LoaderIcon.svg(v.loader, 26);
+        else iconEl.append(icon('cubes', 24));
+        list.append(h('div.recent-row' + (v ? '' : '.missing'), {
+          title: v ? name : name + '（实例已不存在）',
+          onclick: () => launchRecent(v),
+        },
+          iconEl,
+          h('div.grow', { style: { minWidth: 0 } },
+            h('div.recent-name.ellipsis', null, name),
+            h('div.recent-sub.ellipsis', null, sub),
+          ),
+          playBtn,
+          moreBtn,
+        ));
+      }
+      body.append(list);
+    }
+
+    card.__refresh = draw;
+    draw();
+    return card;
+  }
+
   // ------------------------------------------------------------ 日历（游玩记录）
   function calendarCard() {
     const card = h('div.card.cal-card');
@@ -1062,6 +1164,33 @@
     }, '启 动');
     if (s.gameRunning) setLaunching(launchBtn, false, '再启动一个');
 
+    const runningNameEl = h('span.launch-running-name.ellipsis');
+    const runningRow = h('div.launch-running', { style: { display: 'none' } },
+      h('span.pulse-dot'),
+      runningNameEl,
+      h('button.btn.btn-danger.btn-xs.pressable', {
+        onclick: async (e) => {
+          e.stopPropagation();
+          try {
+            await window.smcl.kill();
+            window.Store.set({ gameRunning: false });
+            window.Toast.info('已发送结束指令');
+          } catch (err) { window.Toast.error(err.message); }
+        },
+      }, '结束游戏'),
+    );
+    function refreshRunningRow() {
+      const games = window.Store.get('runningGames') || [];
+      const installed = window.Store.get('installed') || [];
+      const names = games.map((g) => {
+        const v = installed.find((x) => x.id === g.id);
+        return v ? (v.displayName || v.id) : g.id;
+      });
+      runningRow.style.display = names.length ? 'flex' : 'none';
+      runningNameEl.textContent = names.join('、');
+      runningNameEl.title = names.join('、');
+    }
+
     const launchCard = h('div.card.launch-card', null,
       h('div.launch-inner', null,
         h('div.launch-content', null,
@@ -1087,38 +1216,9 @@
             h('div.slider-wrap', null, memSlider, memValue),
           ),
         ),
+        runningRow,
         h('div.launch-btn-row', null, launchBtn),
       ),
-    );
-
-    // ---------- 状态区 ----------
-    const statusGrid = h('div.status-grid', null,
-      statusTile('Java 运行时', '☕', javaTileValue),
-      statusTile('游戏目录', '📁', dirsTileValue),
-      statusTile('已安装实例', '🎮', installedTileValue),
-      statusTile('安全状态', '🛡', safetyTileValue),
-    );
-    const statusCard = h('div.card.status-card', null, h('div.card-body', null,
-      h('div.section-title', { style: { marginTop: '0' } }, '运行环境'),
-      statusGrid,
-    ));
-
-    // ---------- 运行中的游戏 ----------
-    const runningCard = h('div.card.game-running', { style: { display: s.gameRunning ? 'flex' : 'none' } },
-      h('span.pulse-dot', null),
-      h('div.grow', null,
-        h('div', { style: { fontWeight: '600', fontSize: '13.5px' } }, '游戏正在运行'),
-        h('div.faint', null, '日志见底部抽屉'),
-      ),
-      h('button.btn.btn-danger.btn-sm.pressable', {
-        onclick: async () => {
-          try {
-            await window.smcl.kill();
-            window.Store.set({ gameRunning: false });
-            window.Toast.info('已发送结束指令');
-          } catch (e) { window.Toast.error(e.message); }
-        },
-      }, '结束游戏'),
     );
 
     // ---------- 公告 ----------
@@ -1191,10 +1291,10 @@
     // ---- 组件化首页：卡片可拖拽 / 缩放 / 刷新，互不重叠，页面可滚动 ----
     const srvCard = serverCard();
     const calCard = calendarCard();
+    const recent = recentCard();
     const widgets = [
       { id: 'launch', title: '启动', card: launchCard, refresh: () => { if (els.versionTrigger) els.versionTrigger.textContent = instanceLabel(els.versionSelect); } },
-      { id: 'status', title: '运行环境', card: statusCard, refresh: () => home._refreshTiles && home._refreshTiles() },
-      { id: 'running', title: '运行状态', card: runningCard, hidden: !s.gameRunning },
+      { id: 'recent', title: '从最近的项目开始', card: recent, refresh: () => recent.__refresh && recent.__refresh() },
       { id: 'servers', title: '服务器', card: srvCard, refresh: () => srvCard.__refresh && srvCard.__refresh() },
       { id: 'calendar', title: '日历', card: calCard, refresh: () => calCard.__refresh && calCard.__refresh() },
       { id: 'announce', title: '公告', card: announceCard, refresh: () => fillAnnounce() },
@@ -1205,32 +1305,30 @@
     const holderMap = mountWidgets(canvas, widgets);
     fillAnnounce();
     els.canvas = canvas;
-    els.runningWidget = holderMap.running;
+    void holderMap;
 
     drawAvatar(avatar);
-    els = { banners, versionSelect, versionTrigger, launchBtn, statusGrid, runningCard, memSlider };
+    els = { banners, versionSelect, versionTrigger, launchBtn, memSlider };
+    home._refreshRunningRow = refreshRunningRow;
+    home._recentRefresh = () => recent.__refresh && recent.__refresh();
+    refreshRunningRow();
     refreshStatus();
 
-    // 数据异步到达后刷新状态瓦片（去重订阅）
+    // 数据异步到达后刷新状态卡片（去重订阅）
     if (!home._subscribed) {
       home._subscribed = true;
-      window.Store.on('javaList', () => home._refreshTiles && home._refreshTiles());
-      window.Store.on('installed', () => { if (home._refreshTiles) home._refreshTiles(); const b = document.querySelector('.server-card .card-body'); if (b && window.Store.state.view === 'home') drawServers(b); });
-      window.Store.on('dirs', () => home._refreshTiles && home._refreshTiles());
-      // 游戏运行状态变化（含游戏自行退出）→ 同步启动按钮与运行卡
+      window.Store.on('installed', () => {
+        if (home._recentRefresh) home._recentRefresh();
+        const b = document.querySelector('.server-card .card-body');
+        if (b && window.Store.state.view === 'home') drawServers(b);
+      });
+      // 游戏运行状态变化（含游戏自行退出）→ 同步启动按钮、运行行与最近项目
       window.Store.on('gameRunning', (running) => {
         if (els.launchBtn) setLaunching(els.launchBtn, false, running ? '再启动一个' : undefined);
-        const holder = els.runningWidget || els.runningCard;
-        if (holder) {
-          if (holder.dataset.domainLocked === '1') {
-            holder.dataset.gameHidden = running ? '0' : '1';
-            if (els.canvas && els.canvas.__domainLayout) applyDomainLayout(els.canvas, els.canvas.__domainLayout);
-          } else {
-            holder.style.display = running ? 'flex' : 'none';
-            if (els.canvas) updateCanvasHeight(els.canvas);
-          }
-        }
+        if (home._refreshRunningRow) home._refreshRunningRow();
+        if (!running) setTimeout(() => { if (home._recentRefresh) home._recentRefresh(); }, 1200);
       });
+      window.Store.on('runningGames', () => { if (home._refreshRunningRow) home._refreshRunningRow(); });
     }
     // 内存实时模式：自动分配开启时，滑块每 2 秒跟随系统可用内存变化（PCL 同款）
     if (!home._memTimer) {

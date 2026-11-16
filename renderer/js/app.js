@@ -490,9 +490,12 @@
       if (!wrap) return;
       wrap.hidden = false;
       document.getElementById('topbarDot').style.background = n ? '#3dd68c' : 'rgba(150,160,180,0.6)';
-      document.getElementById('topbarStatusText').textContent = n
-        ? (n > 1 ? '共 ' + n + ' 个游戏窗口运行中 · 日志见底部抽屉' : '游戏正在运行 · 日志见底部抽屉')
-        : '没有运行中的实例';
+      const installed = window.Store.state.installed || [];
+      const names = runningGames.map((g) => {
+        const v = installed.find((x) => x.id === g.id && (!g.dir || x.dir === g.dir));
+        return v ? (v.displayName || v.id) : g.id;
+      });
+      document.getElementById('topbarStatusText').textContent = n ? names.join('、') : '没有运行中的实例';
       document.getElementById('topbarStopBtn').hidden = !n;
       window.Store.set({ gameRunning: n > 0, runningGames: runningGames.slice() });
     };
