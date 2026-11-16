@@ -180,6 +180,15 @@ async function importPack(file, info, hooks = {}) {
   let resuming = false;
   try {
     if (fs.existsSync(path.join(resumeDir, '.swustmcl-importing'))) resuming = true;
+    else {
+      // 旧版合并 bug 留下的实例（没有 inheritsFrom 也丢了 classpath）按损坏处理，同名导入直接覆盖修复
+      const jp = path.join(resumeDir, instanceId + '.json');
+      if (fs.existsSync(jp)) {
+        const j = JSON.parse(fs.readFileSync(jp, 'utf8'));
+        const jvm = JSON.stringify((j.arguments && j.arguments.jvm) || '');
+        if (!j.inheritsFrom && !jvm.includes('classpath') && !j.minecraftArguments) resuming = true;
+      }
+    }
   } catch {}
   if (!resuming) instanceId = uniqueInstanceId(mcDir, baseName);
   safe.assertVersionId(instanceId);
@@ -225,7 +234,31 @@ async function importPack(file, info, hooks = {}) {
       const parentId = instJson.inheritsFrom;
       if (parentId) {
         const merged = versionLib.loadVersionJson(mcDir, parentId); // 已沿继承链合并
-        const out = { ...merged, ...instJson, id: instanceId };
+        const libKey = (lib) => {
+          const parts = String((lib && lib.name) || '').split(':');
+          return parts.length >= 2 ? parts[0] + ':' + parts[1] + ':' + (parts[3] || '') : String((lib && lib.name) || '');
+        };
+        const libs = [];
+        const seen = new Set();
+        for (const l of [...(merged.libraries || []), ...(instJson.libraries || [])]) {
+          const k = libKey(l);
+          if (seen.has(k)) {
+            const i = libs.findIndex((x) => libKey(x) === k);
+            if (i >= 0) libs[i] = l; // 子版本覆盖同坐标库
+          } else { seen.add(k); libs.push(l); }
+        }
+        const args = {
+          game: [...((merged.arguments && merged.arguments.game) || []), ...((instJson.arguments && instJson.arguments.game) || [])],
+          jvm: [...((merged.arguments && merged.arguments.jvm) || []), ...((instJson.arguments && instJson.arguments.jvm) || [])],
+        };
+        const out = {
+          ...merged,
+          ...instJson,
+          id: instanceId,
+          libraries: libs,
+          arguments: args,
+        };
+        if (!out.minecraftArguments && merged.minecraftArguments) out.minecraftArguments = merged.minecraftArguments;
         delete out.inheritsFrom;
         const instJar = path.join(instanceDir, `${instanceId}.jar`);
         if (!fs.existsSync(instJar)) {
@@ -245,6 +278,12 @@ async function importPack(file, info, hooks = {}) {
           }
         } catch {}
         fs.writeFileSync(instJsonPath, JSON.stringify(out, null, 2), 'utf8');
+        try {
+          const metaFile = path.join(instanceDir, 'swustmcl-instance.json');
+          const meta = fs.existsSync(metaFile) ? JSON.parse(fs.readFileSync(metaFile, 'utf8')) : {};
+          meta.mergedFrom = parentId;
+          fs.writeFileSync(metaFile, JSON.stringify(meta, null, 2), 'utf8');
+        } catch {}
         log.info(`已合并底座 ${parentId} → ${instanceId}${usedByOthers ? '（保留底座）' : ''}`);
         if (!usedByOthers && needBase) {
           try {

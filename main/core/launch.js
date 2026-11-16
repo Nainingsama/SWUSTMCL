@@ -179,6 +179,13 @@ function build(id, options = {}) {
   const settings = settingsLib.all();
   const mcDir = options.sourceDir || settings.mcDir;
   const meta = versionLib.loadVersionJson(mcDir, id);
+  // 旧版导入合并 bug：实例 JSON 没有继承链也丢了原版 classpath/游戏参数，直接启动会 CNFE
+  if (!meta.inheritsFrom && !meta.minecraftArguments) {
+    const jvmStr = JSON.stringify((meta.arguments && meta.arguments.jvm) || '');
+    if (!jvmStr.includes('classpath')) {
+      throw new Error('实例缺少启动参数（旧版整合包合并问题），请到「整合包」用同一个实例名重新导入一次来修复');
+    }
+  }
 
   // 实例级设置（swustmcl-instance.json）覆盖全局：Java / 内存 / JVM 参数
   const instances = require('./instances');
