@@ -5,6 +5,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const AdmZip = require('adm-zip');
 
 const net = require('./net');
 const mirror = require('./mirror');
@@ -124,6 +125,83 @@ function check(mcDir, id) {
   return { ok: missing.length === 0, missing, brokenJar, meta };
 }
 
+/** 读取模组 jar 的 fabric.mod.json，判断是否依赖 Fabric API 提供的模块 */
+function jarNeedsFabricApi(file) {
+  try {
+    const zip = new AdmZip(file);
+    const txt = zip.readAsText('fabric.mod.json');
+    if (!txt) return false;
+    const meta = JSON.parse(txt);
+    const deps = meta && meta.depends && typeof meta.depends === 'object' ? meta.depends : {};
+    const standalone = new Set(['fabric', 'fabric-loader', 'fabric-language-kotlin', 'fabric-permissions-api', 'fabric-placeholder-api']);
+    return Object.keys(deps).some((k) => k === 'fabric-api' || ((k.startsWith('fabric-') || k === 'fabric-resource-loader-v0') && !standalone.has(k)));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 模组前置检查：Fabric 实例装了模组却没有 Fabric API 时，很多整合包会直接
+ * 报「fabric-api / fabric-resource-loader-v0 未安装」。返回需要补的模组。
+ */
+function modCheck(mcDir, id) {
+  try {
+    const meta = versionLib.loadVersionJson(mcDir, id);
+    const loader = versionLib.loaderOf(id, meta);
+    if (loader !== 'Fabric') return { missing: [] };
+    const modsDir = path.join(mcDir, 'versions', id, 'mods');
+    let jars = [];
+    try { jars = fs.readdirSync(modsDir).filter((f) => /\.jar$/i.test(f)); } catch {}
+    if (!jars.length) return { missing: [] };
+    if (jars.some((f) => /^fabric[-_]api(?:[-_.]|$)/i.test(f))) return { missing: [] };
+    // 只有确实有模组声明依赖 Fabric API 时才补，避免给普通 Fabric 实例多装前置
+    if (!jars.some((f) => jarNeedsFabricApi(path.join(modsDir, f)))) return { missing: [] };
+    const mc = versionLib.guessMcVersion(id, meta) || versionLib.guessMcVersion(meta.inheritsFrom, null) || (() => {
+      // 合并导入实例的版本号保存在 swustmcl-instance.json 的 mergedFrom（如 1.21.1）
+      try { return JSON.parse(fs.readFileSync(path.join(mcDir, 'versions', id, 'swustmcl-instance.json'), 'utf8')).mergedFrom || ''; } catch { return ''; }
+    })();
+    return { missing: [{ name: 'fabric-api', kind: 'mod', mcVersion: mc }] };
+  } catch {
+    return { missing: [] };
+  }
+}
+
+/** 从 Modrinth 下载与实例游戏版本匹配的 Fabric API */
+async function ensureFabricApi(mcDir, id, onProgress, signal) {
+  const abortIf = () => { if (signal && signal.aborted) { const e = new Error('已取消'); e.aborted = true; throw e; } };
+  const check = modCheck(mcDir, id);
+  if (!check.missing.length) return { added: 0, remaining: [] };
+  const mc = check.missing[0].mcVersion;
+  if (!mc) return { added: 0, remaining: [{ name: 'fabric-api', error: '无法确定游戏版本' }] };
+  const qs = 'loaders=' + encodeURIComponent('["fabric"]') + '&game_versions=' + encodeURIComponent(JSON.stringify([mc]));
+  let list;
+  try {
+    list = await net.fetchJson('https://api.modrinth.com/v2/project/fabric-api/version?' + qs, { timeout: 20000 });
+  } catch (e) {
+    if (e && e.aborted) throw e;
+    return { added: 0, remaining: [{ name: 'fabric-api', error: '查询失败：' + e.message }] };
+  }
+  if (!Array.isArray(list) || !list.length) return { added: 0, remaining: [{ name: 'fabric-api', error: '没有适用于 ' + mc + ' 的版本' }] };
+  const pick = list.find((v) => v.version_type === 'release') || list[0];
+  const file = (pick.files || []).find((f) => f.primary) || (pick.files || [])[0];
+  if (!file || !file.url) return { added: 0, remaining: [{ name: 'fabric-api', error: '下载地址为空' }] };
+  const dest = path.join(mcDir, 'versions', id, 'mods', file.filename || 'fabric-api.jar');
+  try {
+    abortIf();
+    await net.download(file.url, dest, {
+      expectedSize: file.size || 0,
+      expectedSha1: (file.hashes && file.hashes.sha1) || '',
+      expectZip: true,
+      signal,
+    });
+    if (onProgress) onProgress({ done: 1, total: 1, message: '已补齐 Fabric API' });
+    return { added: 1, remaining: [] };
+  } catch (e) {
+    if (e && e.aborted) throw e;
+    return { added: 0, remaining: [{ name: 'fabric-api', error: e.message }] };
+  }
+}
+
 /**
  * 修复缺失依赖。jar 头损坏的文件先删再补。
  * @param {(p:{done:number,total:number})=>void} [onProgress]
@@ -167,7 +245,16 @@ async function fix(mcDir, id, onProgress, source, opts = {}) {
     if (onProgress) onProgress({ done, total: tasks.length });
   });
 
-  return { fixed: tasks.length - remaining.length, remaining };
+  let added = 0;
+  try {
+    const api = await ensureFabricApi(mcDir, id, onProgress, signal);
+    added = api.added || 0;
+    if (api.remaining && api.remaining.length) remaining.push(...api.remaining);
+  } catch (e) {
+    if (e && e.aborted) throw e;
+    remaining.push({ name: 'fabric-api', error: e.message });
+  }
+  return { fixed: tasks.length - remaining.length + added, remaining };
 }
 
-module.exports = { check, fix };
+module.exports = { check, fix, modCheck, ensureFabricApi };

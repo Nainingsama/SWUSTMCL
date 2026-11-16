@@ -939,12 +939,14 @@ ipcMain.handle('game:repair', async (_e, payload) => {
   try {
     report({ message: '正在体检…', percent: 5 });
     const c = core.repair.check(dir, id);
-    if (c.ok) {
+    const mod = core.repair.modCheck(dir, id);
+    if (c.ok && !mod.missing.length) {
       report({ stage: 'done', message: '依赖完整，无需修复', percent: 100 });
       return { ok: true, fixed: 0, remaining: [] };
     }
-    report({ message: `发现 ${c.missing.length} 个缺失/损坏文件`, percent: 15 });
-    const r = await core.repair.fix(dir, id, (p) => report({ message: `补全文件 ${p.done}/${p.total}`, percent: 15 + Math.round((p.done / Math.max(1, p.total)) * 85) }));
+    const missingCount = c.missing.length + mod.missing.length;
+    report({ message: `发现 ${missingCount} 个缺失/损坏文件或前置模组`, percent: 15 });
+    const r = await core.repair.fix(dir, id, (p) => report({ message: p.message || `补全文件 ${p.done}/${p.total}`, percent: 15 + Math.round((p.done / Math.max(1, p.total)) * 85) }));
     report({ stage: 'done', message: r.remaining.length ? `仍有 ${r.remaining.length} 个未补齐` : '修复完成', percent: 100 });
     return { ok: r.remaining.length === 0, fixed: r.fixed, remaining: r.remaining };
   } finally {
@@ -1023,16 +1025,19 @@ async function launchGame(payload, signal) {
   // 启动前体检：库/资源缺失会自动补全（否则 Fabric 等加载器会 ClassNotFoundException）
   try {
     const pre = core.repair.check(dir, id);
-    if (!pre.ok) {
-      log.info(`启动前体检：缺 ${pre.missing.length} 个文件，自动补全…`);
-      send('install:progress', { id, stage: 'preflight', cancelKey: 'launch', message: '启动前补全缺失依赖…', percent: 1 });
+    const mod = core.repair.modCheck(dir, id);
+    if (!pre.ok || mod.missing.length) {
+      log.info(`启动前体检：缺 ${pre.missing.length} 个文件、${mod.missing.length} 个模组前置，自动补全…`);
+      send('install:progress', { id, stage: 'preflight', cancelKey: 'launch', message: mod.missing.length ? '正在补齐 Fabric API…' : '启动前补全缺失依赖…', percent: 1 });
       await core.repair.fix(dir, id, (p) => {
         const pct = Math.max(1, Math.min(99, Math.round((p.done / Math.max(1, p.total)) * 100)));
-        send('install:progress', { id, stage: 'preflight', cancelKey: 'launch', message: `补全依赖 ${p.done}/${p.total}`, percent: pct });
+        send('install:progress', { id, stage: 'preflight', cancelKey: 'launch', message: p.message || `补全依赖 ${p.done}/${p.total}`, percent: pct });
       }, s.downloadSource === 'bmcl' ? 'bmcl' : 'mojang', { signal });
       const after = core.repair.check(dir, id);
-      if (!after.ok) {
-        throw new Error(`实例依赖不完整（仍缺 ${after.missing.length} 个文件），自动补全未成功——请到「版本管理 → 体检」检查网络后重试`);
+      const modAfter = core.repair.modCheck(dir, id);
+      if (!after.ok || modAfter.missing.length) {
+        const extra = modAfter.missing.length ? '，仍缺 Fabric API' : '';
+        throw new Error(`实例依赖不完整（仍缺 ${after.missing.length} 个文件${extra}），自动补全未成功——请到「版本管理 → 体检」检查网络后重试`);
       }
       send('install:progress', { id, stage: 'done', message: '依赖已补全', percent: 100 });
     }
@@ -1261,10 +1266,20 @@ ipcMain.handle('modpack:install', async (_e, payload) => {
         await core.loaders.install(loader, mc, lv, instanceId, (settingsLib.all().downloadSource === 'bmcl' ? 'bmcl' : 'mojang'), onProgress, { signal: ctl.signal, exact: true });
       },
     });
-    // 校验依赖完整性
+    // 校验依赖完整性（含 Fabric 模组前置）
     if (r.id) {
       const c = core.repair.check(settingsLib.all().mcDir, r.id);
-      r.dependencies = { ok: c.ok, missing: c.missing.length };
+      let modMissing = 0;
+      try {
+        const api = await core.repair.ensureFabricApi(settingsLib.all().mcDir, r.id, (p) => {
+          send('modpack:progress', { name: info.name, cancelKey: 'modpack', stage: 'repair', message: p.message || '正在补齐 Fabric API…', percent: 99 });
+        }, ctl.signal);
+        modMissing = (api.remaining || []).length;
+      } catch (e) {
+        if (e && e.aborted) throw e;
+        modMissing = 1;
+      }
+      r.dependencies = { ok: c.ok && !modMissing, missing: c.missing.length + modMissing };
     }
     return r;
   } catch (e) {
