@@ -33,7 +33,7 @@ function parse(md) {
     all.push({
       version,
       date: String(hm[2] || '').trim(),
-      items: lines.slice(0, 8).map((x) => x.replace(/^[-*]\s+/, '').replace(/\*\*/g, '')),
+      items: lines.slice(0, 30).map((x) => x.replace(/^[-*]\s+/, '').replace(/\*\*/g, '')),
     });
   }
   return all;

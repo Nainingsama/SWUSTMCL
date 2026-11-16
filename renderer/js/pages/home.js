@@ -358,6 +358,9 @@
         h: sv.h != null ? sv.h : d.h,
       };
       const mx = maxOf(w.id);
+      // 启动卡至少留出完整显示内存条与启动按钮的高度；运行环境至少能完整显示四项
+      if (w.id === 'launch') pos.h = Math.max(pos.h, 350);
+      if (w.id === 'status') pos.h = Math.max(pos.h, 200);
       pos.w = clampNum(pos.w, W_MIN.w, mx.w);
       pos.h = clampNum(pos.h, W_MIN.h, mx.h);
       const card = w.card;
@@ -570,7 +573,12 @@
       el.style.left = Math.round(left) + 'px';
       el.style.width = Math.round(widthPx) + 'px';
       if (sv.y != null) el.style.top = Math.round(sv.y) + 'px';
-      if (sv.h != null) el.style.height = Math.round(clampNum(sv.h, W_MIN.h, mx.h)) + 'px';
+      if (sv.h != null) {
+        let h = clampNum(sv.h, W_MIN.h, mx.h);
+        if (el.dataset.widget === 'launch') h = Math.max(h, 350);
+        if (el.dataset.widget === 'status') h = Math.max(h, 200);
+        el.style.height = Math.round(h) + 'px';
+      }
     }
     updateCanvasHeight(canvas); // 只读比例渲染，不回写（避免裁剪值累积导致布局漂移）
   }
@@ -1078,26 +1086,28 @@
 
     const launchCard = h('div.card.launch-card', null,
       h('div.launch-inner', null,
-        h('div', null,
+        h('div.launch-content', null,
+          h('div', null,
+            h('div.field', null,
+              h('span.field-label', null, '游戏版本'),
+              versionTrigger,
+            ),
+          ),
+          playerChip,
           h('div.field', null,
-            h('span.field-label', null, '游戏版本'),
-            versionTrigger,
-          ),
-        ),
-        playerChip,
-        h('div.field', null,
-          h('div.row', { style: { justifyContent: 'space-between' } },
-            h('div.row', { style: { gap: '8px' } },
-              h('span.field-label', null, '内存分配'),
-              autoSwitch,
-              h('span.field-hint#memModeHint', null, autoMem ? '自动平衡 · 物理 35%' : '手动指定'),
+            h('div.row', { style: { justifyContent: 'space-between' } },
+              h('div.row', { style: { gap: '8px' } },
+                h('span.field-label', null, '内存分配'),
+                autoSwitch,
+                h('span.field-hint#memModeHint', null, autoMem ? '自动平衡 · 物理 35%' : '手动指定'),
+              ),
+              h('div.row', { style: { gap: '8px' } },
+                freeBtn,
+                h('span.field-hint', { id: 'memUsageHint' }, `物理 ${fmtSize(physicalMemory())}`),
+              ),
             ),
-            h('div.row', { style: { gap: '8px' } },
-              freeBtn,
-              h('span.field-hint', { id: 'memUsageHint' }, `物理 ${fmtSize(physicalMemory())}`),
-            ),
+            h('div.slider-wrap', null, memSlider, memValue),
           ),
-          h('div.slider-wrap', null, memSlider, memValue),
         ),
         h('div.launch-btn-row', null, launchBtn),
       ),
@@ -1110,7 +1120,7 @@
       statusTile('已安装实例', '🎮', installedTileValue),
       statusTile('安全状态', '🛡', safetyTileValue),
     );
-    const statusCard = h('div.card', null, h('div.card-body', null,
+    const statusCard = h('div.card.status-card', null, h('div.card-body', null,
       h('div.section-title', { style: { marginTop: '0' } }, '运行环境'),
       statusGrid,
     ));
@@ -1164,7 +1174,7 @@
       try {
         const r = await window.smcl.releaseNotes();
         if (!r || !r.ok) throw new Error('no notes');
-        const items = r.items.slice(0, 4).map((t) => (String(t).length > 56 ? String(t).slice(0, 56) + '…' : String(t)));
+        const shown = r.items.slice(0, 2).map((t) => (String(t).length > 48 ? String(t).slice(0, 48) + '…' : String(t)));
         window.Dom.clear(bodyEl).append(
           h('div.banner.banner-info.announce-head', null, '✦',
             h('div.grow', null,
@@ -1172,8 +1182,11 @@
               r.date ? h('div.announce-date', null, r.date) : null,
             )),
           h('div.col.announce-list', null,
-            ...items.map((t) => h('div.announce-item', { title: t }, '· ' + t)),
+            ...shown.map((t) => h('div.announce-item', { title: t }, '· ' + t)),
           ),
+          r.items.length > shown.length
+            ? h('button.announce-more', { onclick: () => openReleaseNotes(r) }, '查看全部 ' + r.items.length + ' 条更新 ›')
+            : null,
         );
       } catch {
         window.Dom.clear(bodyEl).append(
@@ -1181,6 +1194,20 @@
           h('div.muted', null, '更新日志暂不可用，可前往 GitHub Releases 查看。'),
         );
       }
+    }
+
+    /** 公告卡「查看全部」：完整更新日志弹窗 */
+    function openReleaseNotes(r) {
+      let modal = null;
+      modal = window.Modal.open({
+        title: 'v' + r.version + ' 更新' + (r.date ? ' · ' + r.date : ''),
+        body: (el) => {
+          const list = h('div.announce-modal-list');
+          for (const t of r.items) list.append(h('div.announce-modal-item', null, '· ' + t));
+          el.append(list);
+        },
+        footer: [h('button.btn.btn-primary', { onclick: () => modal.close(true) }, '知道了')],
+      });
     }
 
     // ---- 组件化首页：卡片可拖拽 / 缩放 / 刷新，互不重叠，页面可滚动 ----
@@ -1251,6 +1278,8 @@
       tiles.forEach((el, i) => {
         Promise.resolve(fns[i]()).then((v) => {
           window.Dom.clear(el).append(...[].concat(v).filter(Boolean));
+          const tile = el.closest('.status-tile');
+          if (tile) tile.title = String(tile.querySelector('.st-label') ? tile.querySelector('.st-label').textContent : '') + '：' + String(el.textContent || '').replace(/\s+/g, ' ').trim();
         }).catch(() => {});
       });
     };
@@ -1265,14 +1294,17 @@
     const ok = list.some((j) => j.major >= need);
     return [
       h('span.badge.' + (ok ? 'badge-green' : 'badge-orange'), null, `${list.length} 个可用`),
-      h('span.faint', null, `最高 Java ${Math.max(...list.map((j) => j.major))} · 需 ${need}+`),
+      h('span.faint', null, `最高 ${Math.max(...list.map((j) => j.major))} · 需 ${need}+`),
     ];
   }
   function dirsTileValue() {
-    const dirs = window.Store.state.dirs || [];
+    const installed = window.Store.state.installed || [];
+    const seen = new Map();
+    for (const v of installed) if (v.dir && !seen.has(v.dir)) seen.set(v.dir, v.dirName || v.dir);
+    const names = [...seen.values()];
     return [
-      h('span', null, `${dirs.length} 个目录`),
-      h('span.faint.ellipsis', null, dirs.length ? dirs.map((d) => d.name).join(' · ') : '未发现'),
+      h('span', null, `${seen.size} 个目录`),
+      h('span.faint.ellipsis', null, names.length ? names.join(' · ') : '未发现'),
     ];
   }
   function installedTileValue() {
@@ -1318,6 +1350,7 @@
     );
     Promise.resolve(valueFn()).then((v) => {
       window.Dom.clear(valueEl).append(...[].concat(v).filter(Boolean));
+      tile.title = label + '：' + String(valueEl.textContent || '').replace(/\s+/g, ' ').trim();
     }).catch(() => {
       window.Dom.clear(valueEl).append(h('span.faint', null, '获取失败'));
     });

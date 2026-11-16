@@ -12,13 +12,14 @@
 @media (max-width: 1180px) { .home-hero { grid-template-columns: 1fr; } }
 
 .launch-card { overflow: hidden; }
-.launch-card .launch-inner { padding: 22px 24px; display: flex; flex-direction: column; gap: 16px; }
+.launch-card .launch-inner { padding: 14px 20px; display: flex; flex-direction: column; gap: 12px; overflow: hidden; }
+.launch-content { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 12px; scrollbar-width: thin; }
 
 .player-chip {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px;
+  padding: 7px 10px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--card-border);
@@ -28,7 +29,7 @@
 .launch-btn-row { display: flex; gap: 12px; align-items: center; }
 .launch-btn {
   flex: 1;
-  height: 52px;
+  height: 48px;
   font-size: 16px;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -47,7 +48,13 @@
 .launch-btn:not(:disabled):hover::after { animation: sheen 0.9s ease; }
 @keyframes sheen { to { transform: translateX(120%); } }
 
-.status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+/* 运行环境卡片：紧凑排版，矮卡片也能完整显示四项；值过长时省略并用 title 展示全文 */
+.status-card .card-body { padding: 8px 12px; }
+.status-card .status-tile { padding: 8px 10px; gap: 3px; }
+.status-card .status-grid { grid-template-columns: 1fr 1fr; }
+.status-card .st-label { font-size: 11px; }
+.status-card .st-value { min-height: 18px; font-size: 12px; white-space: nowrap; overflow: hidden; }
 .status-tile { padding: 14px 16px; display: flex; flex-direction: column; gap: 7px; }
 .status-tile .st-label { font-size: 12px; color: var(--text-faint); display: flex; align-items: center; gap: 6px; }
 .status-tile .st-value { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; min-height: 22px; }
@@ -373,7 +380,7 @@ body.theme-light .cal-cell:not(.empty):hover { background: rgba(20, 30, 50, 0.08
 .home-widget { position: absolute; display: flex; flex-direction: column; }
 .home-widget > .card { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; margin: 0; }
 .home-widget .card-body { overflow: auto; flex: 1; min-height: 0; }
-.home-widget .launch-inner { flex: 1; min-height: 0; overflow: auto; }
+.home-widget .launch-inner { flex: 1; min-height: 0; overflow: hidden; }
 .widget-head { cursor: grab; user-select: none; }
 .widget-head:active { cursor: grabbing; }
 .widget-grip { opacity: 0.45; letter-spacing: 2px; font-size: 13px; flex: none; }
@@ -792,15 +799,22 @@ body.theme-light .res-instance-row > .field-hint {
 .announce-card .card-body { padding-top: 4px; }
 /* 内容超出时可滚动：底部留白 + 渐隐，避免文字贴死在卡片底边 */
 .announce-body {
-  padding-bottom: 26px;
-  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent 100%);
+  padding-bottom: 14px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent 100%);
 }
-.announce-head { align-items: flex-start; padding: 10px 12px; }
+.announce-head { align-items: flex-start; padding: 8px 10px; }
 .announce-head .announce-date { font-size: 11px; opacity: 0.7; margin-top: 2px; font-weight: 400; }
-.announce-list { gap: 6px; margin-top: 10px; padding: 0 2px; }
+.announce-list { gap: 4px; margin-top: 6px; padding: 0 2px; }
 .announce-item {
   font-size: 12px; line-height: 1.5; color: var(--text-dim);
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical;
   overflow: hidden; word-break: break-word;
 }
+.announce-more {
+  align-self: flex-start; margin-top: -2px; padding: 2px 0; border: none; background: none;
+  color: var(--accent); font-size: 11.5px; cursor: pointer;
+}
+.announce-more:hover { text-decoration: underline; }
+.announce-modal-list { display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow-y: auto; padding-right: 4px; }
+.announce-modal-item { font-size: 13px; line-height: 1.65; color: var(--text-dim); word-break: break-word; }
