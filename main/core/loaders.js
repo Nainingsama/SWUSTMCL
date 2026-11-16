@@ -264,6 +264,19 @@ async function installForgeLike(loader, mc, loaderVersion, instanceId, source, o
   const jvm = javaLib.pick(javas, needMajor) || javas[0];
   if (!jvm) throw new Error('未找到可用的 Java，请先在设置里确认 Java 检测结果');
 
+  // Forge/NeoForge 安装器要求存在 launcher_profiles.json（纯净目录里没有）
+  try {
+    fs.mkdirSync(mcDir, { recursive: true });
+    fs.mkdirSync(path.join(mcDir, 'versions'), { recursive: true });
+    const lp = path.join(mcDir, 'launcher_profiles.json');
+    if (!fs.existsSync(lp)) {
+      fs.writeFileSync(lp, JSON.stringify({ profiles: {}, settings: {}, version: 3 }, null, 2), 'utf8');
+      steps.push('已补齐 launcher_profiles.json');
+    }
+  } catch (e) {
+    steps.push('写入 launcher_profiles.json 失败：' + e.message);
+  }
+
   const result = await new Promise((resolve) => {
     const { spawn } = require('child_process');
     const child = spawn(jvm.java, ['-jar', tmp, '--installClient', mcDir], {

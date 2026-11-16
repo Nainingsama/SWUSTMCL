@@ -42,6 +42,8 @@
   let viewMode = localStorage.getItem('swustmcl.versionsView') || 'grid';
   let sortMode = localStorage.getItem('swustmcl.versionsSort') || 'name';
   let selectedId = window.Store.get('selectedInstance') || '';
+  let selectedDir = window.Store.get('selectedInstanceDir') || ''; // 同名实例跨目录时用目录区分
+  const isSelected = (x) => x.id === selectedId && (!selectedDir || x.dir === selectedDir);
   let query = '';
 
   function render(root) {
@@ -86,7 +88,7 @@
       const keep = new Set([selectedId, window.Store.get('homeVersionId')].filter(Boolean));
       all = all.filter((v) => !v.inheritsCount || keep.has(v.id));
     }
-    if (selectedId && !all.some((v) => v.id === selectedId)) selectedId = '';
+    if (selectedId && !all.some((v) => isSelected(v))) { selectedId = ''; selectedDir = ''; }
 
     // ---------- 左：实例列表 ----------
     window.Dom.clear(side);
@@ -209,10 +211,10 @@
       side.append(head);
       if (collapsed) continue;
       for (const v of items) {
-        side.append(h('div.ver-side-row.ver-side-child' + (v.id === selectedId ? '.chosen' : ''), {
+        side.append(h('div.ver-side-row.ver-side-child' + (isSelected(v) ? '.chosen' : ''), {
           title: v.dir + '\\versions\\' + v.id,
-          dataset: { vid: v.id },
-          onclick: () => selectInstanceById(v.id),
+          dataset: { vid: v.id, vdir: v.dir || '' },
+          onclick: () => selectInstanceById(v.id, v.dir),
         },
           h('span.loader-mini', { innerHTML: window.LoaderIcon.svg(v.loader, 16) }),
           h('span.ellipsis.grow', null, v.displayName || v.id),
@@ -237,7 +239,7 @@
     if (!mainEl) return;
     window.Dom.clear(mainEl);
     if (selectedId) {
-      const dv = all.find((x) => x.id === selectedId);
+      const dv = all.find((x) => x.id === selectedId && (!selectedDir || x.dir === selectedDir));
       if (dv) {
         // 8 秒内复用同一个详情节点：来回切换实例不再重建概览（体感明显更跟手）
         const key = dv.dir + '|' + dv.id;
@@ -324,13 +326,14 @@
 
   /** 选中实例：只切换左侧高亮 + 重绘右侧，避免整个列表重建造成的卡顿 */
   let selRenderTimer = null;
-  function selectInstanceById(id) {
+  function selectInstanceById(id, dir) {
     selectedId = id || '';
-    window.Store.set({ selectedInstance: selectedId });
+    selectedDir = id ? String(dir || '') : '';
+    window.Store.set({ selectedInstance: selectedId, selectedInstanceDir: selectedDir });
     const sideEl = rootEl && rootEl.querySelector('#verSide');
     if (sideEl) {
       sideEl.querySelectorAll('.ver-side-row').forEach((row) => {
-        row.classList.toggle('chosen', row.dataset.vid === selectedId);
+        row.classList.toggle('chosen', row.dataset.vid === selectedId && (!selectedDir || row.dataset.vdir === selectedDir));
       });
     }
     if (selRenderTimer) clearTimeout(selRenderTimer);
@@ -344,7 +347,8 @@
 
   function selectInstance(v) {
     selectedId = v.id;
-    window.Store.set({ selectedInstance: v.id });
+    selectedDir = v.dir || '';
+    window.Store.set({ selectedInstance: v.id, selectedInstanceDir: selectedDir });
     drawAll();
   }
 
@@ -762,7 +766,8 @@
 
   function openDetail(v, tab) {
     selectedId = v.id;
-    window.Store.set({ selectedInstance: v.id });
+    selectedDir = v.dir || '';
+    window.Store.set({ selectedInstance: v.id, selectedInstanceDir: selectedDir });
     detailTab = tab || '概览';
     if (window.app.current !== 'versions') window.app.goto('versions');
     else drawAll();
