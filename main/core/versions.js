@@ -217,6 +217,9 @@ function listInstalled(gameDirs) {
         updatedAt = fs.statSync(jsonPath).mtimeMs;
       } catch {}
 
+      let meta = {};
+      try { meta = JSON.parse(fs.readFileSync(path.join(instDir, 'swustmcl-instance.json'), 'utf8')) || {}; } catch {}
+
       out.push({
         id,
         dir: d.path,
@@ -230,7 +233,8 @@ function listInstalled(gameDirs) {
         loader: loaderOf(id, json),
         hasJar: fs.existsSync(path.join(instDir, `${id}.jar`)),
         isolated: dirsLib.isIsolatedInstance(instDir),
-        displayName: (() => { try { return JSON.parse(fs.readFileSync(path.join(instDir, 'swustmcl-instance.json'), 'utf8')).displayName || ''; } catch { return ''; } })(),
+        displayName: meta.displayName || '',
+        mergedFrom: meta.mergedFrom || '',
         mods: countEntries(path.join(instDir, 'mods')),
         size: null, // 体积由后台异步补齐
         updatedAt,
@@ -238,9 +242,12 @@ function listInstalled(gameDirs) {
     }
   }
 
-  // 标记被其它实例继承的底座版本（loader 实例共同的 vanilla）
+  // 标记底座版本：
+  // 1) 被其它实例 inheritsFrom / 导入合并（mergedFrom）引用；
+  // 2) 纯原版骨架（无加载器、未隔离、无模组）：通常是安装加载器时留下的原版。
   for (const v of out) {
-    v.inheritsCount = out.filter((o) => o.dir === v.dir && o.inheritsFrom === v.id).length;
+    v.inheritsCount = out.filter((o) => o !== v && o.dir === v.dir && (o.inheritsFrom === v.id || o.mergedFrom === v.id)).length;
+    v.isBase = v.inheritsCount > 0 || (v.loader === '原版' && !v.isolated && !v.mods && v.hasJar);
   }
   out.sort((a, b) => b.updatedAt - a.updatedAt);
   return out;

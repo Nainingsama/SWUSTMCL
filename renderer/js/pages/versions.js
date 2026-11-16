@@ -44,6 +44,7 @@
   let selectedId = window.Store.get('selectedInstance') || '';
   let selectedDir = window.Store.get('selectedInstanceDir') || ''; // 同名实例跨目录时用目录区分
   const isSelected = (x) => x.id === selectedId && (!selectedDir || x.dir === selectedDir);
+  const isBaseVersion = (v) => v.isBase || v.inheritsCount > 0;
   let query = '';
 
   function render(root) {
@@ -82,11 +83,12 @@
     const mainEl = rootEl && rootEl.querySelector('#verMain');
     if (!side || !mainEl) return;
     let all = installedSorted();
-    // 默认隐藏只作为底座的版本（被其它实例 inheritsFrom 引用），可点工具栏「底座」显示
+    // 默认隐藏底座版本（被其它实例继承/合并引用，或纯原版骨架），可点工具栏「底座」显示
     const showBases = localStorage.getItem('swustmcl.showBases') === '1';
+    let hiddenBases = 0;
     if (!showBases) {
-      const keep = new Set([selectedId, window.Store.get('homeVersionId')].filter(Boolean));
-      all = all.filter((v) => !v.inheritsCount || keep.has(v.id));
+      hiddenBases = all.filter(isBaseVersion).length;
+      all = all.filter((v) => !isBaseVersion(v));
     }
     if (selectedId && !all.some((v) => isSelected(v))) { selectedId = ''; selectedDir = ''; }
 
@@ -229,12 +231,12 @@
       h('button.ver-side-btn', { onclick: () => window.app.goto('settings') }, svgIcon('gear', 14), '全局游戏设置'),
     );
 
-    renderRight(all, mainEl);
+    renderRight(all, mainEl, hiddenBases);
   }
 
   /** 只重绘右侧（选中实例 / 切换视图时用，左侧栏保持不变） */
   const detailNodeCache = new Map();
-  function renderRight(all, mainEl) {
+  function renderRight(all, mainEl, hiddenBases = 0) {
     mainEl = mainEl || (rootEl && rootEl.querySelector('#verMain'));
     if (!mainEl) return;
     window.Dom.clear(mainEl);
@@ -251,9 +253,15 @@
         return;
       }
     }
-    const launchTargetId = window.Store.get('homeVersionId') || (all[0] && all[0].id);
+    const allInstalled = window.Store.get('installed') || [];
+    const launchTargetId = window.Store.get('homeVersionId') || (all[0] && all[0].id) || (allInstalled[0] && allInstalled[0].id);
     const launchTargetDir = window.Store.get('homeVersionDir') || '';
-    const sel = all.find((v) => v.id === launchTargetId && (!launchTargetDir || v.dir === launchTargetDir)) || all.find((v) => v.id === launchTargetId);
+    const sel = all.find((v) => v.id === launchTargetId && (!launchTargetDir || v.dir === launchTargetDir)) ||
+      all.find((v) => v.id === launchTargetId) ||
+      allInstalled.find((v) => v.id === launchTargetId && (!launchTargetDir || v.dir === launchTargetDir)) ||
+      allInstalled.find((v) => v.id === launchTargetId);
+    const baseCount = (window.Store.get('installed') || []).filter(isBaseVersion).length;
+    const showBases = localStorage.getItem('swustmcl.showBases') === '1';
     const viewSeg = h('div.seg', null,
       h('button.seg-item' + (viewMode === 'grid' ? '.active' : ''), { title: '网格视图', onclick: () => { viewMode = 'grid'; localStorage.setItem('swustmcl.versionsView', viewMode); drawAll(); } }, svgIcon('grid', 15)),
       h('button.seg-item' + (viewMode === 'list' ? '.active' : ''), { title: '列表视图', onclick: () => { viewMode = 'list'; localStorage.setItem('swustmcl.versionsView', viewMode); drawAll(); } }, svgIcon('list', 15)),
@@ -288,15 +296,20 @@
         h('span.spacer'),
         searchInp,
         h('button.btn.btn-ghost.btn-xs.pressable', {
-          title: '显示/隐藏被其它实例继承的底座版本',
-          style: localStorage.getItem('swustmcl.showBases') === '1' ? { opacity: 1 } : { opacity: 0.6 },
+          title: (() => {
+            if (!baseCount) return '当前没有底座版本（被引用或被合并的原版）';
+            return `底座版本共 ${baseCount} 个，当前${showBases ? '显示' : '隐藏'}${!showBases && hiddenBases ? `（已隐藏 ${hiddenBases} 个）` : ''} —— 点击切换`;
+          })(),
+          style: showBases ? { opacity: 1 } : { opacity: 0.6 },
           onclick: (e) => {
+            if (!baseCount) { window.Toast.info('当前没有底座版本，导入的整合包已合并为独立实例'); return; }
             const on = localStorage.getItem('swustmcl.showBases') === '1';
             localStorage.setItem('swustmcl.showBases', on ? '0' : '1');
             e.currentTarget.style.opacity = on ? '0.6' : '1';
+            window.Toast.info(on ? `已隐藏 ${baseCount} 个底座版本` : `已显示 ${baseCount} 个底座版本`);
             drawAll();
           },
-        }, '底座'),
+        }, '底座', baseCount ? h('span.badge', { style: { marginLeft: '5px' } }, String(baseCount)) : null),
         h('button.iconbtn', { title: '刷新', onclick: async () => { try { await window.app.refreshInstalled(); window.Toast.success('已刷新'); } catch {} } }, svgIcon('refresh', 16)),
         sortSel,
         viewSeg,
@@ -314,14 +327,44 @@
         all.length ? '没有匹配的实例' : '未发现任何实例 —— 试试「下载游戏」或通过快捷方式自动发现 PCL/HMCL 目录'));
       return;
     }
-    if (viewMode === 'grid') {
-      const grid = h('div.ver-tiles');
-      for (const v of filtered) grid.append(tileOf(v));
-      content.append(grid);
-    } else {
-      const rows = h('div.ver-rows');
-      for (const v of filtered) rows.append(rowOf(v));
-      content.append(rows);
+    // 按实例所在文件夹分组：文件夹之间用分组标题隔开，组内沿用当前排序方式
+    const customNames = (window.Store.get('settings') || {}).dirNames || {};
+    const KIND_ORDER = ['primary', 'official', 'PCL', 'HMCL', 'BakaXL', 'custom'];
+    const dirGroups = new Map();
+    for (const v of filtered) {
+      const key = v.dir || '';
+      if (!dirGroups.has(key)) {
+        dirGroups.set(key, { dir: key, kind: v.kind || 'custom', name: v.dirName || key, items: [] });
+      }
+      dirGroups.get(key).items.push(v);
+    }
+    const orderedGroups = [...dirGroups.values()].sort((a, b) => {
+      const ia = KIND_ORDER.indexOf(a.kind); const ib = KIND_ORDER.indexOf(b.kind);
+      const ka = ia < 0 ? 99 : ia; const kb = ib < 0 ? 99 : ib;
+      if (ka !== kb) return ka - kb;
+      return String(a.name).localeCompare(String(b.name), 'zh-CN') || String(a.dir).localeCompare(String(b.dir), 'zh-CN');
+    });
+    for (const g of orderedGroups) {
+      const label = customNames[g.dir] || (g.kind === 'primary' ? '主目录' : (g.name || '自定义文件夹'));
+      content.append(h('div.ver-dir-head', { title: g.dir + '\\versions' },
+        svgIcon('folder', 14),
+        h('span.ver-dir-name', null, label),
+        h('span.badge', null, String(g.items.length)),
+        h('span.ver-dir-path.ellipsis', null, g.dir),
+        h('button.iconbtn', {
+          title: '打开该文件夹',
+          onclick: (e) => { e.stopPropagation(); window.smcl.openPath(g.dir).catch((err) => window.Toast.error(err.message)); },
+        }, svgIcon('folder', 14)),
+      ));
+      if (viewMode === 'grid') {
+        const grid = h('div.ver-tiles');
+        for (const v of g.items) grid.append(tileOf(v));
+        content.append(grid);
+      } else {
+        const rows = h('div.ver-rows');
+        for (const v of g.items) rows.append(rowOf(v));
+        content.append(rows);
+      }
     }
   }
 
@@ -368,6 +411,7 @@
       h('div.ver-tile-sub', null, (v.mcVersion || v.type) + (v.loader && v.loader !== '原版' ? ', ' + v.loader : '')),
       h('div.ver-tile-badges', null,
         v.isolated ? h('span.badge.badge-accent', null, '隔离') : null,
+        isBaseVersion(v) ? h('span.badge', { title: '底座版本：被其它实例引用，或纯原版骨架' }, '底座') : null,
         v.mods > 0 ? h('span.badge', null, v.mods + ' 模组') : null,
         !v.hasJar ? h('span.badge.badge-red', { title: '缺少 client.jar，可在详情里体检修复' }, '缺 jar') : null,
         sizeBadgeOf(v),
@@ -391,6 +435,7 @@
       ),
       h('span', { style: { display: 'flex', gap: '6px', flex: 'none', alignItems: 'center' } },
         v.isolated ? h('span.badge.badge-accent', null, '隔离') : null,
+        isBaseVersion(v) ? h('span.badge', { title: '底座版本：被其它实例引用，或纯原版骨架' }, '底座') : null,
         v.mods > 0 ? h('span.badge', null, v.mods + ' 模组') : null,
         sizeBadgeOf(v),
       ),
