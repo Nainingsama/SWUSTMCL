@@ -51,6 +51,21 @@
     return i >= 0 ? { dir: s.slice(0, i), id: s.slice(i + 1) } : { dir: '', id: s };
   };
 
+  // 记住最近一次选择/启动的实例（Store 只在内存里，重启后会丢）
+  const LAUNCH_TARGET_KEY = 'swustmcl.launchTarget';
+  function savedLaunchTarget() {
+    try {
+      const v = JSON.parse(localStorage.getItem(LAUNCH_TARGET_KEY) || 'null');
+      return v && v.id ? v : null;
+    } catch { return null; }
+  }
+  function setLaunchTarget(id, dir) {
+    const d = dir || '';
+    window.Store.set({ homeVersionId: id, homeVersionDir: d });
+    try { localStorage.setItem(LAUNCH_TARGET_KEY, JSON.stringify({ id, dir: d })); } catch {}
+  }
+  window.setLaunchTarget = setLaunchTarget;
+
   function instanceLabel(select) {
     const list = window.Store.state.installed || [];
     const want = parseInstKey(select && select.value);
@@ -87,7 +102,7 @@
           onclick: () => {
             chosen = instKey(v);
             select.value = instKey(v);
-            window.Store.set({ homeVersionId: v.id, homeVersionDir: v.dir || '' });
+            window.setLaunchTarget(v.id, v.dir);
             if (els.versionTrigger) els.versionTrigger.textContent = instanceLabel(select);
             draw();
           },
@@ -110,7 +125,7 @@
         close();
         select.value = chosen;
         const pick = parseInstKey(chosen);
-        window.Store.set({ homeVersionId: pick.id, homeVersionDir: pick.dir });
+        window.setLaunchTarget(pick.id, pick.dir);
         if (els.versionTrigger) els.versionTrigger.textContent = instanceLabel(select);
         await doLaunch(els.launchBtn);
       },
@@ -730,6 +745,7 @@
         () => window.smcl.launch(inst.id, inst.dir, { server: { host: srv.host, port: srv.port } }),
         { title: '正在进入服务器…', success: '游戏已启动，正在进入服务器' }
       );
+      window.setLaunchTarget(inst.id, inst.dir);
       window.Store.set({ gameRunning: true });
     } catch {}
   }
@@ -936,7 +952,7 @@
     const versionSelect = h('select.select', {
       id: 'homeVersion',
       style: { display: 'none' },
-      onchange: () => { const p = parseInstKey(versionSelect.value); window.Store.set({ homeVersionId: p.id, homeVersionDir: p.dir }); },
+      onchange: () => { const p = parseInstKey(versionSelect.value); window.setLaunchTarget(p.id, p.dir); },
     });
     fillVersions(versionSelect);
     const versionTrigger = h('button.btn.version-trigger', {
@@ -1324,15 +1340,16 @@
       select.append(h('option', { value: '' }, '（暂无实例，请先下载）'));
       return;
     }
-    const preferredId = window.Store.get('homeVersionId');
-    const preferredDir = window.Store.get('homeVersionDir') || '';
+    const saved = savedLaunchTarget() || {};
+    const preferredId = window.Store.get('homeVersionId') || saved.id || '';
+    const preferredDir = window.Store.get('homeVersionDir') || saved.dir || '';
     const hit = list.find((v) => v.id === preferredId && (!preferredDir || v.dir === preferredDir)) || list.find((v) => v.id === preferredId);
     for (const v of list) {
       select.append(h('option', { value: instKey(v), dataset: { id: v.id, dir: v.dir || '' } }, `${v.id}${v.loader !== '原版' ? ` · ${v.loader}` : ''}${v.dirName !== '主目录' ? `（${v.dirName}）` : ''}`));
     }
     const first = hit || list[0];
     select.value = instKey(first);
-    window.Store.set({ homeVersionId: first.id, homeVersionDir: first.dir || '' });
+    window.setLaunchTarget(first.id, first.dir || '');
   }
 
   async function doLaunch(btn) {
@@ -1349,6 +1366,8 @@
       return;
     }
     const inst = (window.Store.state.installed || []).find((v) => v.id === id && (!pick.dir || v.dir === pick.dir)) || (window.Store.state.installed || []).find((v) => v.id === id);
+    // 以刚点下的实例为准，避免启动后/返回首页时跳回旧选择
+    window.setLaunchTarget(id, pick.dir || (inst && inst.dir) || '');
     setLaunching(btn, true, '启动中…');
     try {
       // 启动前自动补全缺失依赖（jar 损坏检测在主进程 repair.check 里）

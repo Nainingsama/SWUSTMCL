@@ -359,6 +359,7 @@
         () => window.smcl.launch(inst.id, inst.dir, { server: { host: srv.host, port: srv.port } }),
         { title: '正在进入服务器…', success: '游戏已启动，正在进入服务器' }
       );
+      window.setLaunchTarget(inst.id, inst.dir);
       window.Store.set({ gameRunning: true });
     } catch {}
   }

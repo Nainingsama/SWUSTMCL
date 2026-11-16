@@ -401,7 +401,7 @@
     const hd = window.Store.get('homeVersionDir') || '';
     const isSel = v.id === hv && (!hd || v.dir === hd);
     return h('div.card.hoverable.ver-tile' + (isSel ? '.selected' : ''), {
-      onclick: () => { window.Store.set({ homeVersionId: v.id, homeVersionDir: v.dir || '' }); drawAll(); },
+      onclick: () => { window.setLaunchTarget(v.id, v.dir); drawAll(); },
       ondblclick: (e) => { if (e.target.closest('button, a, input, select')) return; launchOne(v); },
     },
       h('span.inst-radio' + (isSel ? '.on' : ''), { style: { position: 'absolute', left: '12px', top: '12px' } }),
@@ -424,7 +424,7 @@
     const hd = window.Store.get('homeVersionDir') || '';
     const isSel = v.id === hv && (!hd || v.dir === hd);
     return h('div.ver-row' + (isSel ? '.selected' : ''), {
-      onclick: () => { window.Store.set({ homeVersionId: v.id, homeVersionDir: v.dir || '' }); drawAll(); },
+      onclick: () => { window.setLaunchTarget(v.id, v.dir); drawAll(); },
       ondblclick: (e) => { if (e.target.closest('button, a, input, select')) return; launchOne(v); },
     },
       h('span.inst-radio' + (isSel ? '.on' : '')),
@@ -836,7 +836,7 @@
       h('button.iconbtn', { title: '移入回收站', style: { color: '#ff6369' }, onclick: () => deleteOne(v) }, svgIcon('trash', 15)),
       h('button.btn.btn-sm.pressable', {
         title: '把该实例设为首页启动实例',
-        onclick: () => { window.Store.set({ homeVersionId: v.id, homeVersionDir: v.dir || '' }); window.Toast.success('已设为启动实例：' + (v.displayName || v.id)); },
+        onclick: () => { window.setLaunchTarget(v.id, v.dir); window.Toast.success('已设为启动实例：' + (v.displayName || v.id)); },
       }, '设为启动实例'),
       h('button.btn.btn-primary.btn-sm.pressable', { onclick: () => launchOne(v) }, svgIcon('play', 14), '启动实例'),
     ));
@@ -991,6 +991,8 @@
         () => window.smcl.launch(v.id, v.dir),
         { title: '正在启动游戏…', success: '游戏启动成功' }
       );
+      // 首页启动卡跟随刚启动的实例（并持久化，重启后仍保持）
+      window.setLaunchTarget(v.id, v.dir);
       window.app.goto('home');
     } catch {}
   }
