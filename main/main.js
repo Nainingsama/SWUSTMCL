@@ -487,8 +487,8 @@ app.whenReady().then(async () => {
       const lnk = path.join(app.getPath('desktop'), '星启 STMCL.lnk');
       // 清理旧品牌 / 指向已改名 exe 的历史快捷方式（含无空格旧名）
       try {
-        const desk = app.getPath('desktop');
-        for (const f of fs.readdirSync(desk)) {
+        const desks = [app.getPath('desktop'), process.env.PUBLIC ? path.join(process.env.PUBLIC, 'Desktop') : ''].filter(Boolean);
+        for (const desk of desks) for (const f of fs.readdirSync(desk)) {
           if (!/\.lnk$/i.test(f)) continue;
           const p = path.join(desk, f);
           let legacy = /SWUSTMCL/i.test(f);
