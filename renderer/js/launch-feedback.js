@@ -17,6 +17,18 @@
     const title = options.title || '正在启动游戏…';
     const text = h('div.muted', { style: { lineHeight: '1.8' } }, title);
     const detail = h('div.faint', { style: { marginTop: '6px', minHeight: '18px' } }, '请稍候，正在准备游戏进程…');
+    let canceled = false;
+    let cancelBtn = null;
+    cancelBtn = h('button.btn', {
+      onclick: async () => {
+        if (canceled) return;
+        canceled = true;
+        cancelBtn.disabled = true;
+        cancelBtn.textContent = '正在取消…';
+        detail.textContent = '正在取消启动，请稍候…';
+        try { await window.smcl.cancelTask('launch'); } catch {}
+      },
+    }, '取消');
     const modal = window.Modal.open({
       title: '启动游戏',
       dismissible: false,
@@ -26,6 +38,7 @@
           h('div.grow', null, text, detail),
         ),
       ),
+      footer: [cancelBtn],
     });
     const off = window.smcl.onInstall((p) => {
       if (!p || !p.message) return;
@@ -40,7 +53,9 @@
     } catch (error) {
       off();
       modal.close(false);
-      window.Toast.error(cleanError(error));
+      const msg = cleanError(error);
+      if (canceled || /取消/.test(msg)) window.Toast.info('已取消启动');
+      else window.Toast.error(msg);
       throw error;
     }
   }

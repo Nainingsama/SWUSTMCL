@@ -4,14 +4,14 @@
   "assets": [
     {
       "name": "STMCL-1.2.8-win-x64.zip",
-      "size": 124716244,
-      "sha256": "153720db8030c8fddb31a2e71a5f80b72ae0ad2c753db2c428c467a97b84968b",
+      "size": 124717275,
+      "sha256": "33e29c61150a393d97707fb6e79ccebd242c0c2331a9ff4282de4e1fff9cd6b0",
       "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.8/STMCL-1.2.8-win-x64.zip"
     },
     {
       "name": "STMCL-1.2.8-Setup-x64.exe",
-      "size": 94412191,
-      "sha256": "45cb00b79d6af69333b32909cabf769df357e98d9ac747deeabc8d24ddae324d",
+      "size": 94412817,
+      "sha256": "597e434dcbf8f7b29080b432439720f3d973535e83c575c7feb875bddff51322",
       "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.8/STMCL-1.2.8-Setup-x64.exe"
     }
   ]

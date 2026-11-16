@@ -174,32 +174,59 @@ async function ensureFabricApi(mcDir, id, onProgress, signal) {
   const mc = check.missing[0].mcVersion;
   if (!mc) return { added: 0, remaining: [{ name: 'fabric-api', error: '无法确定游戏版本' }] };
   const qs = 'loaders=' + encodeURIComponent('["fabric"]') + '&game_versions=' + encodeURIComponent(JSON.stringify([mc]));
-  let list;
-  try {
-    list = await net.fetchJson('https://api.modrinth.com/v2/project/fabric-api/version?' + qs, { timeout: 20000 });
-  } catch (e) {
-    if (e && e.aborted) throw e;
-    return { added: 0, remaining: [{ name: 'fabric-api', error: '查询失败：' + e.message }] };
+  const apis = [
+    'https://api.modrinth.com/v2/project/fabric-api/version?' + qs,
+    'https://mod.mcimirror.top/modrinth/v2/project/fabric-api/version?' + qs,
+  ];
+  let list = null;
+  for (const url of apis) {
+    try {
+      const r = await net.fetchJson(url, { timeout: 8000, retries: 0 });
+      if (Array.isArray(r) && r.length) { list = r; break; }
+    } catch (e) {
+      if (e && e.aborted) throw e;
+    }
   }
-  if (!Array.isArray(list) || !list.length) return { added: 0, remaining: [{ name: 'fabric-api', error: '没有适用于 ' + mc + ' 的版本' }] };
+  if (!list) return { added: 0, remaining: [{ name: 'fabric-api', error: '查询失败（Modrinth / MCIM 均不可用）' }] };
+  list = list.slice().sort((a, b) => String(b.date_published || '').localeCompare(String(a.date_published || '')));
   const pick = list.find((v) => v.version_type === 'release') || list[0];
   const file = (pick.files || []).find((f) => f.primary) || (pick.files || [])[0];
   if (!file || !file.url) return { added: 0, remaining: [{ name: 'fabric-api', error: '下载地址为空' }] };
+  const ver = String(pick.version_number || '');
+  const maven = ver
+    ? 'https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/' + encodeURIComponent(ver) + '/fabric-api-' + encodeURIComponent(ver) + '.jar'
+    : '';
+  const urls = [...new Set([maven, file.url].filter(Boolean))];
   const dest = path.join(mcDir, 'versions', id, 'mods', file.filename || 'fabric-api.jar');
-  try {
-    abortIf();
-    await net.download(file.url, dest, {
-      expectedSize: file.size || 0,
-      expectedSha1: (file.hashes && file.hashes.sha1) || '',
-      expectZip: true,
-      signal,
-    });
-    if (onProgress) onProgress({ done: 1, total: 1, message: '已补齐 Fabric API' });
-    return { added: 1, remaining: [] };
-  } catch (e) {
-    if (e && e.aborted) throw e;
-    return { added: 0, remaining: [{ name: 'fabric-api', error: e.message }] };
+  const total = Number(file.size) || 0;
+  let received = 0;
+  const reportBytes = (n) => {
+    received += Number(n) || 0;
+    if (!onProgress) return;
+    const pct = total ? Math.min(99, Math.round((received / total) * 100)) : 0;
+    const msg = total ? `正在补齐 Fabric API… ${pct}%` : `正在补齐 Fabric API… ${(received / 1048576).toFixed(1)} MB`;
+    onProgress({ done: received, total: total || 0, bytes: true, message: msg });
+  };
+  let lastErr = null;
+  for (const url of urls) {
+    try {
+      abortIf();
+      await net.download(url, dest, {
+        expectedSize: total,
+        expectedSha1: (file.hashes && file.hashes.sha1) || '',
+        expectZip: true,
+        retries: 1,
+        onBytes: reportBytes,
+        signal,
+      });
+      if (onProgress) onProgress({ done: total || 1, total: total || 1, message: 'Fabric API 已补齐' });
+      return { added: 1, remaining: [] };
+    } catch (e) {
+      if (e && e.aborted) throw e;
+      lastErr = e;
+    }
   }
+  return { added: 0, remaining: [{ name: 'fabric-api', error: lastErr ? lastErr.message : '下载失败' }] };
 }
 
 /**

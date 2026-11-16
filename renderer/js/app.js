@@ -79,22 +79,39 @@
     packs: '整合包', content: '资源', saves: '存档', settings: '设置',
   };
 
+  // 页面切换动画期间快速连点会排队多个 switchNow，导致两个 view 同时 active
+  let navTimer = null;
+  let navSeq = 0;
+  let pendingView = null;
+
   const app = {
     current: 'home',
 
     async goto(view) {
-      if (!VIEW_TITLES[view] || view === this.current) return;
+      if (!VIEW_TITLES[view]) return;
+      if (view === pendingView) return;
+      if (view === this.current && !pendingView) return;
+
+      // 取消上一次尚未完成的切换，最后一次点击优先
+      navSeq++;
+      if (navTimer) { clearTimeout(navTimer); navTimer = null; }
+      document.querySelectorAll('.view.leaving').forEach((v) => v.classList.remove('leaving'));
+      pendingView = view;
+      const seq = navSeq;
+
       const prev = document.querySelector(`.view[data-view="${this.current}"]`);
       const next = document.querySelector(`.view[data-view="${view}"]`);
-      if (!next) return;
+      if (!next) { pendingView = null; return; }
 
       document.querySelectorAll('.nav-item').forEach((n) =>
         n.classList.toggle('active', n.dataset.view === view));
       document.getElementById('topbarViewName').textContent = VIEW_TITLES[view];
 
       const switchNow = () => {
-        if (prev) prev.classList.remove('active');
-        next.classList.add('active');
+        if (seq !== navSeq) return;
+        pendingView = null;
+        // 保证任何时刻只有一个页面 active
+        document.querySelectorAll('.view[data-view]').forEach((v) => v.classList.toggle('active', v === next));
         window.Store.set({ view });
         this.current = view;
         const page = Pages[view];
@@ -114,9 +131,13 @@
         if (mainEl) mainEl.scrollTop = 0;
       };
 
+      // 快速点回当前页：取消待切换目标，立即恢复当前页
+      if (view === this.current) { switchNow(); return; }
+
       if (prev && !document.body.classList.contains('reduce-motion')) {
         prev.classList.add('leaving');
-        setTimeout(() => {
+        navTimer = setTimeout(() => {
+          navTimer = null;
           prev.classList.remove('leaving');
           switchNow();
         }, 140);

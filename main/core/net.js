@@ -115,7 +115,7 @@ async function fetchJson(url, { timeout = 25000, retries = 2, raw = false, heade
         const e = new Error(`HTTP ${res.status}`);
         e.status = res.status;
         // 5xx 只重试一次，之后立即放弃这个地址，让上层换镜像/跳过，避免长时间卡住
-        if (res.status >= 500 && attempt >= 1) e.noRetry = true;
+        if (res.status >= 500 && i >= 1) e.noRetry = true;
         throw e;
       }
       return raw ? await res.text() : await res.json();
