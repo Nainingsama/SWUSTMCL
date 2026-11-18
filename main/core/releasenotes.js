@@ -20,7 +20,7 @@ function parse(md) {
   const parts = md.split(/^## \[/m).slice(1);
   for (const part of parts) {
     const nl = part.indexOf('\n');
-    const head = nl >= 0 ? part.slice(0, nl) : part;
+    const head = (nl >= 0 ? part.slice(0, nl) : part).trim();
     const body = nl >= 0 ? part.slice(nl + 1) : '';
     const hm = head.match(/^([^\]]+)\](?:\s*-\s*(.*))?$/);
     if (!hm) continue;
