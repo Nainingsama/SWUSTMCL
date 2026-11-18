@@ -190,7 +190,13 @@ function listInstalled(gameDirs) {
   const seen = new Set();
 
   for (const d of dirs) {
-    const root = path.join(d.path, 'versions');
+    // 常规 .minecraft/versions；美西螈等启动器直接把每个实例放在 profiles/ 下
+    let root = path.join(d.path, 'versions');
+    try {
+      if (!fs.statSync(root).isDirectory()) root = d.path;
+    } catch {
+      root = d.path;
+    }
     let entries = [];
     try {
       entries = fs.readdirSync(root, { withFileTypes: true });
@@ -223,6 +229,7 @@ function listInstalled(gameDirs) {
       out.push({
         id,
         dir: d.path,
+        instDir,
         dirName: d.name,
         kind: d.kind,
         type: json.type || 'release',
@@ -278,12 +285,26 @@ async function dirSize(dir, depth = 0) {
 }
 
 /** 读取本地版本 JSON，沿 inheritsFrom 链合并 */
+/** 实例目录：常规 versions/<id>，也兼容第三方启动器的 profiles/<id> 布局 */
+function instanceDir(mcDir, id) {
+  const normal = path.join(mcDir, 'versions', id);
+  try {
+    if (fs.existsSync(path.join(normal, id + '.json'))) return normal;
+  } catch {}
+  const direct = path.join(mcDir, id);
+  try {
+    if (fs.existsSync(path.join(direct, id + '.json'))) return direct;
+  } catch {}
+  return normal;
+}
+
 function loadVersionJson(mcDir, id, depth = 0) {
   if (depth > 5) throw new Error('版本继承层级过深');
   safe.assertVersionId(id);
-  const file = safe.safeJoin(path.join(mcDir, 'versions'), id, `${id}.json`);
+  const inst = instanceDir(mcDir, id);
+  const file = safe.safeJoin(inst, `${id}.json`);
   const json = readJson(file);
-  if (!json) throw new Error(`未找到版本 ${id} 的 JSON（${path.join(mcDir, 'versions', id)}），可能尚未安装或目录不正确`);
+  if (!json) throw new Error(`未找到版本 ${id} 的 JSON（${inst}），可能尚未安装或目录不正确`);
   if (!json.inheritsFrom) return { ...json, id };
   const parent = loadVersionJson(mcDir, json.inheritsFrom, depth + 1);
   return mergeVersion(parent, { ...json, id });
@@ -335,4 +356,4 @@ function mergeVersion(parent, child) {
   return merged;
 }
 
-module.exports = { getManifest, guessMcVersion, pclMcVersion, getVersionMeta, listInstalled, loadVersionJson, readJson, loaderOf, dirSize };
+module.exports = { getManifest, guessMcVersion, pclMcVersion, getVersionMeta, listInstalled, loadVersionJson, instanceDir, readJson, loaderOf, dirSize };

@@ -44,6 +44,7 @@
     try { activeFloat.close(); } catch {}
   }
 
+  const instPathOf = (v) => v.instDir || [v.dir, 'versions', v.id].join('\\');
   const instKey = (v) => (v && v.dir ? v.dir : '') + '|' + (v ? v.id : '');
   const parseInstKey = (key) => {
     const s = String(key || '');
@@ -565,6 +566,7 @@
     const dateEl = h('div.clock-date');
     const timeEl = h('div.clock-time');
     const tzEl = h('span.clock-tz');
+    const weekdayEl = h('span.clock-weekday');
     const sloganEl = h('div.clock-slogan');
     const SLOGANS = ['一方一世界', '少年你相信命运么', '星光不负赶路人'];
     const sloganOf = (now) => SLOGANS[Math.floor(now.getTime() / 300000) % SLOGANS.length]; // 每 5 分钟轮换
@@ -572,6 +574,7 @@
       const now = new Date();
       const pad = (x) => String(x).padStart(2, '0');
       dateEl.textContent = now.getFullYear() + '年' + pad(now.getMonth() + 1) + '月' + pad(now.getDate()) + '日';
+      weekdayEl.textContent = '星期' + '日一二三四五六'[now.getDay()];
       timeEl.textContent = pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
       const off = -now.getTimezoneOffset() / 60;
       tzEl.textContent = 'UTC' + (off >= 0 ? '+' : '') + off;
@@ -586,7 +589,7 @@
     const card = h('div.card.clock-card', null,
       h('div.card-body', null,
         dateEl,
-        h('div.clock-time-row', null, timeEl, tzEl),
+        h('div.clock-time-row', null, timeEl, tzEl, weekdayEl),
         sloganEl,
       ),
     );
@@ -844,7 +847,7 @@
       const item = (label, ic, fn) => h('button.menu-item', { onclick: () => { close(); fn(); } }, icon(ic, 15), label);
       panel.append(
         item('启动', 'play', () => launchRecent(v)),
-        item('打开文件夹', 'folder', () => window.smcl.openPath([v.dir, 'versions', v.id].join('\\')).catch((e) => window.Toast.error(e.message))),
+        item('打开文件夹', 'folder', () => window.smcl.openPath(instPathOf(v)).catch((e) => window.Toast.error(e.message))),
         item('实例详情', 'apps', () => window.Pages.versions && window.Pages.versions.openDetail(v)),
         item('设为启动实例', 'cubes', () => { window.setLaunchTarget(v.id, v.dir); window.Toast.success('已设为启动实例：' + (v.displayName || v.id)); }),
       );
@@ -864,14 +867,18 @@
         if (!old || end > old.end) latest.set(key, { id: s.id, dir: s.dir || '', end });
       }
       const rows = [...latest.values()].sort((a, b) => b.end - a.end).slice(0, 12);
+      // 只保留仍然存在的实例：删除实例后历史记录不应继续出现在最近项目里
+      const items = rows.map((rec) => ({
+        rec,
+        v: installed.find((x) => x.id === rec.id && (!rec.dir || x.dir === rec.dir)) || installed.find((x) => x.id === rec.id),
+      })).filter((x) => x.v);
       window.Dom.clear(body);
-      if (!rows.length) {
-        body.append(h('div.recent-empty', null, '还没有游玩记录，启动一次游戏后会出现在这里。'));
+      if (!items.length) {
+        body.append(h('div.recent-empty', null, rows.length ? '最近启动的实例已被删除。' : '还没有游玩记录，启动一次游戏后会出现在这里。'));
         return;
       }
       const list = h('div.recent-list');
-      for (const rec of rows) {
-        const v = installed.find((x) => x.id === rec.id && (!rec.dir || x.dir === rec.dir)) || installed.find((x) => x.id === rec.id);
+      for (const { rec, v } of items) {
         const name = v ? (v.displayName || v.id) : rec.id;
         const sub = '上次游玩于 ' + relTime(rec.end) + (v && v.mcVersion ? ' · ' + v.mcVersion : '');
         const playBtn = h('button.recent-play.iconbtn', {

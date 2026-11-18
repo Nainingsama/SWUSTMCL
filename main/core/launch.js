@@ -47,23 +47,24 @@ function offlineUuid(name) {
 
 /** 客户端 jar 可能落在父版本目录（整合包实例 → 加载器 → 原版） */
 function resolveClientJar(mcDir, id, meta) {
-  const own = path.join(mcDir, 'versions', id, `${id}.jar`);
+  const own = path.join(versionLib.instanceDir(mcDir, id), `${id}.jar`);
   if (fs.existsSync(own)) return own;
   let cur = meta && meta.inheritsFrom;
   for (let i = 0; cur && i < 5; i++) {
-    const jar = path.join(mcDir, 'versions', cur, `${cur}.jar`);
+    const jar = path.join(versionLib.instanceDir(mcDir, cur), `${cur}.jar`);
     if (fs.existsSync(jar)) return jar;
     let next = null;
     try {
-      next = JSON.parse(fs.readFileSync(path.join(mcDir, 'versions', cur, `${cur}.json`), 'utf8')).inheritsFrom || null;
+      next = JSON.parse(fs.readFileSync(path.join(versionLib.instanceDir(mcDir, cur), `${cur}.json`), 'utf8')).inheritsFrom || null;
     } catch {
       next = null;
     }
     cur = next;
   }
   try {
-    const jar = fs.readdirSync(path.join(mcDir, 'versions', id)).find((f) => f.endsWith('.jar'));
-    if (jar) return path.join(mcDir, 'versions', id, jar);
+    const idir = versionLib.instanceDir(mcDir, id);
+    const jar = fs.readdirSync(idir).find((f) => f.endsWith('.jar'));
+    if (jar) return path.join(idir, jar);
   } catch {}
   return own;
 }
@@ -190,7 +191,7 @@ function build(id, options = {}) {
   // 实例级设置（swustmcl-instance.json）覆盖全局：Java / 内存 / JVM 参数
   const instances = require('./instances');
   const merged = instances.mergedLaunchOptions(
-    safe.safeJoin(path.join(mcDir, 'versions'), id),
+    versionLib.instanceDir(mcDir, id),
     { javaPath: options.javaPath || settings.javaPath, memory: options.memory || settings.memory || 4096, jvmArgs: options.jvmArgs || settings.jvmArgs || '' }
   );
 
@@ -198,7 +199,7 @@ function build(id, options = {}) {
   const acc = options.account && options.account.accessToken ? options.account : null;
   const memory = Math.max(1024, Number(merged.memory || 4096));
   const javaPath = merged.javaPath;
-  const instanceDir = safe.safeJoin(path.join(mcDir, 'versions'), id);
+  const instanceDir = versionLib.instanceDir(mcDir, id);
 
   // 版本隔离：实例内有独立数据时强制隔离；否则跟随实例设置/全局设置
   let isolated = dirsLib.isIsolatedInstance(instanceDir);

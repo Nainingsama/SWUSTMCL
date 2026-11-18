@@ -7,9 +7,22 @@
   let rootEl = null;
   let inspecting = null; // {file, info}
 
+  const EXPORT_PRESET_KEY = 'swustmcl.exportPreset';
+  const EXPORT_DEFAULTS = {
+    packName: '', packVersion: '1.0.0',
+    mods: true, modConfig: true, bodySettings: true,
+    personal: false, maps: false, screenshots: false, servers: false, resources: false,
+  };
+  let exportPreset = (() => {
+    try { return { ...EXPORT_DEFAULTS, ...(JSON.parse(localStorage.getItem(EXPORT_PRESET_KEY) || '{}') || {}) }; }
+    catch { return { ...EXPORT_DEFAULTS }; }
+  })();
+
   function render(root) {
     rootEl = root;
     window.Dom.clear(root);
+    let exportSel = null, exportName = null, exportVersion = null;
+    const exportOpts = { ...exportPreset };
 
     const drop = h('div.dropzone', {
       onclick: () => pickFile(),
@@ -37,20 +50,54 @@
     root.append(
       h('div.section-title', null, '导入整合包'),
       h('div.card', null, h('div.card-body', null, drop, progWrap)),
-      h('div.section-title', null, '导出整合包', h('span.hint', null, '把本地实例打包成 Modrinth 格式 zip（mods/config/资源/光影等）')),
+      h('div.section-title', null, '导出整合包', h('span.hint', null, '可自选导出内容；PCL/HMCL/YMCL 推荐 PCL 兼容 zip，Modrinth 用 .mrpack')),
       h('div.card', null,
         h('div.card-body', null,
-          h('div.row', null,
-            h('div.field.grow', null,
+          h('div.row.row-wrap', { style: { gap: '12px', alignItems: 'flex-end' } },
+            h('div.field.grow', { style: { minWidth: '220px' } },
               h('span.field-label', null, '选择实例'),
-              buildInstanceSelect(),
+              exportSel = buildInstanceSelect(),
             ),
-            h('button.btn.pressable', { style: { alignSelf: 'flex-end' }, onclick: exportFlow }, '生成导出计划'),
+            h('div.field.grow', { style: { minWidth: '160px' } },
+              h('span.field-label', null, '整合包名称'),
+              exportName = h('input.input', { value: exportPreset.packName || '', placeholder: '默认使用实例名' }),
+            ),
+            h('div.field', { style: { width: '120px', flex: 'none' } },
+              h('span.field-label', null, '整合包版本'),
+              exportVersion = h('input.input', { value: exportPreset.packVersion || '1.0.0' }),
+            ),
+          ),
+          h('div.export-title', null, '导出内容列表'),
+          exportCheckRow('游戏本体', '正式版与加载器由启动器在导入时自动安装', true, () => {}, 0, true),
+          exportCheckRow('游戏本体设置', '键位、音量、视频设置等（options.txt）', exportPreset.bodySettings, (v) => { exportOpts.bodySettings = v; }, 1),
+          exportCheckRow('游戏本体个人信息', '命令历史、已保存的快捷栏等', exportPreset.personal, (v) => { exportOpts.personal = v; }, 1),
+          exportCheckRow('Mod 模组', 'mods 目录下的所有模组 jar', exportPreset.mods, (v) => { exportOpts.mods = v; }, 0),
+          exportCheckRow('Mod 设置与任务书', 'config / defaultconfigs / ftbquests / patchouli_books / kubejs / scripts', exportPreset.modConfig, (v) => { exportOpts.modConfig = v; }, 1),
+          exportCheckRow('已绘制的地图', 'Xaero / JourneyMap 等地图缓存', exportPreset.maps, (v) => { exportOpts.maps = v; }, 1),
+          exportCheckRow('截图', 'screenshots 目录', exportPreset.screenshots, (v) => { exportOpts.screenshots = v; }, 0),
+          exportCheckRow('多人游戏服务器列表', 'servers.dat', exportPreset.servers, (v) => { exportOpts.servers = v; }, 0),
+          exportCheckRow('资源包与光影', 'resourcepacks / shaderpacks', exportPreset.resources, (v) => { exportOpts.resources = v; }, 0),
+          h('div.row.mt-12', { style: { gap: '8px', flexWrap: 'wrap' } },
+            h('button.btn.btn-primary.pressable', { onclick: () => exportFlow(exportSel, exportName, exportVersion, exportOpts) }, '生成导出计划'),
+            h('button.btn.btn-ghost.btn-sm.pressable', { onclick: openExportGuide }, '整合包制作指南'),
           ),
           h('div#exportPlanBox'),
         ),
       ),
     );
+
+    // 切换实例时同步整合包名称与版本，避免沿用上一个实例的填写内容
+    const syncExportFields = () => {
+      if (!exportSel) return;
+      const [dir, id] = String(exportSel.value || '').split('|');
+      const inst = (window.Store.get('installed') || []).find((v) => v.id === id && (!dir || v.dir === dir));
+      if (exportName) exportName.value = inst ? (inst.displayName || inst.id) : id;
+      if (exportVersion) exportVersion.value = '1.0.0';
+    };
+    if (exportSel) {
+      exportSel.addEventListener('change', syncExportFields);
+      syncExportFields();
+    }
   }
 
   function buildInstanceSelect() {
@@ -161,12 +208,67 @@
     }
   }
 
-  async function exportFlow(e) {
-    const sel = e.target.closest('.card').querySelector('select');
-    const [dir, id] = sel.value.split('|');
+  function exportCheckRow(label, desc, checked, onChange, level = 0, disabled = false) {
+    const cb = h('input', {
+      type: 'checkbox', checked: Boolean(checked), disabled,
+      style: { width: '15px', height: '15px', marginTop: '2px', accentColor: 'var(--accent)', flex: 'none' },
+      onchange: () => onChange(cb.checked),
+    });
+    return h('label.export-check' + (level ? '.child' : '') + (disabled ? '.disabled' : ''), null,
+      cb,
+      h('div.grow', { style: { minWidth: 0 } },
+        h('div.export-check-label', null, label),
+        desc ? h('div.faint', null, desc) : null,
+      ),
+    );
+  }
+
+  function savePreset(nameInp, verInp, opts) {
+    exportPreset = {
+      ...EXPORT_DEFAULTS,
+      ...opts,
+      packName: String(nameInp.value || '').trim(),
+      packVersion: String(verInp.value || '').trim() || '1.0.0',
+    };
+    try { localStorage.setItem(EXPORT_PRESET_KEY, JSON.stringify(exportPreset)); } catch {}
+    window.Toast.success('导出配置已保存');
+  }
+
+  function loadPreset() {
+    try { exportPreset = { ...EXPORT_DEFAULTS, ...(JSON.parse(localStorage.getItem(EXPORT_PRESET_KEY) || '{}') || {}) }; } catch {}
+    render(rootEl);
+    window.Toast.info('已读取导出配置');
+  }
+
+  function openExportGuide() {
+    let modal = null;
+    modal = window.Modal.open({
+      title: '整合包制作指南',
+      body: (el) => el.append(
+        h('div.col', { style: { gap: '10px', fontSize: '13px', lineHeight: '1.7' } },
+          h('div', null, '1. 选择要导出的实例，填写整合包名称与版本。'),
+          h('div', null, '2. 勾选导出内容：「Mod 设置与任务书」包含 config、defaultconfigs、ftbquests、patchouli_books、kubejs、scripts 等。'),
+          h('div', null, '3. 「游戏本体」不用打包，导入时会按整合包元数据自动安装对应 MC 版本与加载器。'),
+          h('div', null, '4. PCL 兼容 zip：CurseForge manifest + overrides 结构，PCL/HMCL/YMCL 能识别并自动安装游戏本体与加载器。'),
+          h('div', null, '5. Modrinth 导出为 .mrpack，适合支持 Modrinth 格式的启动器。'),
+          h('div.muted', null, '不会打包启动器程序、存档、日志、libraries、assets 或 natives。'),
+        ),
+      ),
+      footer: [h('button.btn.btn-primary', { onclick: () => modal.close(true) }, '知道了')],
+    });
+  }
+
+  async function exportFlow(sel, nameInp, verInp, opts) {
+    const [dir, id] = String(sel && sel.value || '').split('|');
     if (!id) return window.Toast.warn('没有可导出的实例');
+    const options = {
+      ...opts,
+      packName: String((nameInp && nameInp.value) || '').trim() || id,
+      packVersion: String((verInp && verInp.value) || '').trim() || '1.0.0',
+    };
     try {
-      const plan = await window.smcl.exportPlan(id, dir);
+      savePreset(nameInp, verInp, opts);
+      const plan = await window.smcl.exportPlan(id, dir, options);
       plan.gameRoot = dir;
       const box = rootEl.querySelector('#exportPlanBox');
       window.Dom.clear(box).append(
@@ -174,13 +276,17 @@
           h('div.card-body', null,
             h('div.row.row-wrap', null,
               h('span.badge.badge-blue', null, `实例 ${plan.id}`),
+              h('span.badge', null, `名称 ${plan.packName || plan.id}`),
+              h('span.badge', null, `版本 ${plan.packVersion || '1.0.0'}`),
               plan.mcVersion ? h('span.badge', null, `MC ${plan.mcVersion}`) : null,
               plan.loader ? h('span.badge.badge-purple', null, `${plan.loader} ${plan.loaderVersion || ''}`) : null,
               h('span.badge', null, `${plan.files.length} 个文件`),
               h('span.badge.badge-green', null, fmtSize(plan.totalBytes)),
+              plan.questFiles > 0 ? h('span.badge.badge-orange', null, `任务书 ${plan.questFiles} 个文件`) : null,
             ),
-            h('div.row.mt-12', null,
-              h('button.btn.btn-primary.pressable', { onclick: () => doExport(plan) }, '导出为 zip'),
+            h('div.row.mt-12', { style: { flexWrap: 'wrap' } },
+              h('button.btn.btn-primary.pressable', { onclick: () => doExport(plan, 'pcl') }, '导出整合包 zip（含任务书）'),
+              h('button.btn.btn-ghost.pressable', { onclick: () => doExport(plan, 'mrpack') }, '导出 Modrinth (.mrpack)'),
             ),
           ),
         ),
@@ -190,13 +296,17 @@
     }
   }
 
-  async function doExport(plan) {
+  async function doExport(plan, format = 'pcl') {
     try {
-      const dest = await window.smcl.exportPick(plan.id);
+      const safeName = String(plan.packName || plan.id).replace(/[\/:*?"<>|]/g, ' ').trim() || plan.id;
+      const dest = await window.smcl.exportPick(format === 'pcl' ? safeName + '-PCL' : safeName, format);
       if (!dest) return;
-      window.Toast.info('正在打包…');
-      const r = await window.smcl.exportPack(plan.id, dest, plan.gameRoot);
-      window.Toast.success(`已导出 ${r.count} 个文件 → ${dest}`);
+      window.Toast.info(format === 'pcl' ? '正在打包（含任务书）…' : '正在打包 Modrinth 整合包…');
+      const r = await window.smcl.exportPack(plan.id, dest, plan.gameRoot, format, plan.options || {});
+      const d = r.detected;
+      window.Toast.success(d
+        ? `已导出 ${r.count} 个文件 · ${d.format} · MC ${d.mcVersion || '?'}${d.loader ? ' · ' + d.loader + ' ' + (d.loaderVersion || '') : ''}`
+        : `已导出 ${r.count} 个文件 → ${dest}`);
     } catch (e) {
       window.Toast.error(e.message.replace(/^Error: /, ''));
     }

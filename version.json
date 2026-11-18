@@ -1,18 +1,18 @@
 {
-  "version": "1.2.9",
-  "notes": "1.2.9：新增「从最近的项目开始」、首页固定布局与运行状态合并；修复快速切页内容叠加、Fabric 整合包缺 Fabric API 无法启动、卡片底部裁切与日历空隙。",
+  "version": "1.2.10",
+  "notes": "1.2.10：系统托盘与游戏自动隐藏、下载队列与取消清理、可选内容整合包导出（含任务书，兼容 PCL/HMCL/YMCL）、启动防白屏、Java 选择与非 C 盘检测修复、默认隔离实例中文修复。",
   "assets": [
     {
-      "name": "STMCL-1.2.9-win-x64.zip",
-      "size": 124717453,
-      "sha256": "57e342fea9998d420bf88b9066cbd33ee643f1a87d261b82b66c2c1ee407275a",
-      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.9/STMCL-1.2.9-win-x64.zip"
+      "name": "STMCL-1.2.10-win-x64.zip",
+      "size": 124726828,
+      "sha256": "ab735c6b9ecfc529f0b7af8dc8ba21ba0d7b09c95abdaeedaf1d2bd9049677a0",
+      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.10/STMCL-1.2.10-win-x64.zip"
     },
     {
-      "name": "STMCL-1.2.9-Setup-x64.exe",
-      "size": 94412854,
-      "sha256": "ecbd34e0adbb86a2d0eda137d613478b47774e515f608179a17f7d3e8ed6f29e",
-      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.9/STMCL-1.2.9-Setup-x64.exe"
+      "name": "STMCL-1.2.10-Setup-x64.exe",
+      "size": 94421644,
+      "sha256": "45a87e15c41a3a67bd7acaa9128e7224000e41ff5024eb58cd574cb3c1cf0d48",
+      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.10/STMCL-1.2.10-Setup-x64.exe"
     }
   ]
 }

@@ -8,7 +8,7 @@
  *   - 所有 IPC 参数在 core/safe.js 与各 handler 里二次校验；
  *   - smcl-wall:// 协议只读 userData/wallpapers/ 白名单文件。
  */
-const { app, BrowserWindow, ipcMain, dialog, shell, Notification, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Notification, clipboard, Tray, Menu, nativeImage } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -232,6 +232,43 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 // ------------------------------------------------------------ 窗口
+let tray = null;
+let autoHiddenForGame = false;
+function appIconPath() {
+  const ico = path.join(path.dirname(process.execPath), 'icon.ico');
+  return fs.existsSync(ico) ? ico : path.join(__dirname, '..', 'renderer', 'assets', 'logo.png');
+}
+function showMainWindow() {
+  autoHiddenForGame = false;
+  if (!win) createWindow();
+  if (!win) return;
+  try { win.setSkipTaskbar(false); } catch {}
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+function hideToTray() {
+  if (!win) return;
+  try { win.hide(); win.setSkipTaskbar(true); } catch {}
+}
+function setupTray() {
+  if (tray) return;
+  try {
+    const img = nativeImage.createFromPath(appIconPath());
+    tray = new Tray(img.isEmpty() ? nativeImage.createEmpty() : img.resize({ width: 16, height: 16 }));
+    tray.setToolTip('STMCL');
+    tray.on('click', showMainWindow);
+    tray.on('double-click', showMainWindow);
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: '显示主界面', click: showMainWindow },
+      { label: '重新加载界面', click: () => { showMainWindow(); try { win.webContents.reload(); } catch {} } },
+      { type: 'separator' },
+      { label: '退出 STMCL', click: () => { mwState.allowClose = true; app.quit(); } },
+    ]));
+  } catch (e) {
+    log.warn('托盘图标创建失败：' + e.message);
+  }
+}
 function createWindow() {
   win = new BrowserWindow({
     width: 1280,
@@ -241,8 +278,8 @@ function createWindow() {
     show: false,
     frame: false,
     backgroundColor: '#0b0e14',
-    icon: (() => { const ico = path.join(path.dirname(process.execPath), 'icon.ico'); return fs.existsSync(ico) ? ico : path.join(__dirname, '..', 'renderer', 'assets', 'logo.png'); })(),
-    title: '星启 STMCL',
+    icon: appIconPath(),
+    title: 'STMCL',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -254,6 +291,7 @@ function createWindow() {
   });
 
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  setupTray();
 
   win.webContents.on('console-message', (_e, level, message) => {
     if (level >= 2) console.log('[renderer]', message);
@@ -276,7 +314,7 @@ function createWindow() {
     const action = settingsLib.all().closeAction || 'ask';
     if (action === 'minimize') {
       e.preventDefault();
-      win.minimize();
+      hideToTray();
       return;
     }
     if (action === 'close') return;
@@ -292,8 +330,26 @@ function createWindow() {
   });
 
   win.once('ready-to-show', () => {
-    win.show();
-    if (isDev) win.webContents.openDevTools({ mode: 'detach' });
+    win.__paintReady = true;
+    const show = () => {
+      if (!win || win.isDestroyed() || win.__shown) return;
+      win.__shown = true;
+      win.show();
+      if (isDev) win.webContents.openDevTools({ mode: 'detach' });
+    };
+    win.__showWhenReady = show;
+    setTimeout(show, 120);
+    // 渲染层异常时兜底显示，避免窗口一直隐藏
+    setTimeout(() => { if (win && !win.isDestroyed() && !win.__shown) { win.__shown = true; win.show(); } }, 5000);
+  });
+  win.webContents.on('render-process-gone', (_e, details) => {
+    log.error(`渲染进程退出：${details && details.reason}，尝试重新加载界面`);
+    if (!win || win.isDestroyed()) return;
+    setTimeout(() => { try { win.webContents.reload(); } catch {} }, 400);
+  });
+  win.webContents.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
+    if (!isMainFrame) return;
+    log.error(`界面加载失败：${code} ${desc} ${url}`);
   });
   win.on('closed', () => {
     win = null;
@@ -484,25 +540,36 @@ app.whenReady().then(async () => {
   try {
     if (app.isPackaged) {
       const exe = process.execPath;
-      const lnk = path.join(app.getPath('desktop'), '星启 STMCL.lnk');
-      // 清理旧品牌 / 指向已改名 exe 的历史快捷方式（含无空格旧名）
+      const lnk = path.join(app.getPath('desktop'), 'STMCL.lnk');
+      // 清理旧品牌 / 指向旧 exe 的历史快捷方式（桌面含子文件夹）
+      let removedLegacy = false;
       try {
         const desks = [app.getPath('desktop'), process.env.PUBLIC ? path.join(process.env.PUBLIC, 'Desktop') : ''].filter(Boolean);
-        for (const desk of desks) for (const f of fs.readdirSync(desk)) {
-          if (!/\.lnk$/i.test(f)) continue;
-          const p = path.join(desk, f);
-          let legacy = /SWUSTMCL/i.test(f);
-          if (!legacy) {
-            try { const sc = shell.readShortcutLink(p); legacy = /\\SWUSTMCL\.exe$/i.test(String((sc && sc.target) || '')); } catch {}
+        const walk = (dir, depth) => {
+          if (depth < 0) return;
+          let ents = [];
+          try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+          for (const ent of ents) {
+            const p = path.join(dir, ent.name);
+            if (ent.isDirectory()) { walk(p, depth - 1); continue; }
+            if (!/\.lnk$/i.test(ent.name)) continue;
+            let legacy = /SWUSTMCL/i.test(ent.name) || (/星启/.test(ent.name) && /STMCL/i.test(ent.name));
+            if (!legacy) {
+              try { const sc = shell.readShortcutLink(p); legacy = /\\SWUSTMCL\.exe$/i.test(String((sc && sc.target) || '')); } catch {}
+            }
+            if (legacy) { try { fs.unlinkSync(p); removedLegacy = true; log.info('已删除旧快捷方式：' + p); } catch {} }
           }
-          if (legacy) { try { fs.unlinkSync(p); log.info('已删除旧快捷方式：' + f); } catch {} }
-        }
+        };
+        for (const desk of desks) walk(desk, 3);
       } catch {}
+      if (removedLegacy) {
+        try { require('child_process').execFile('ie4uinit.exe', ['-show'], { windowsHide: true }, () => {}); } catch {}
+      }
       // 开始菜单里的旧快捷方式同样清理
       try {
         const sm = path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs');
         for (const f of fs.readdirSync(sm)) {
-          if (/SWUSTMCL/i.test(f) && /\.lnk$/i.test(f)) {
+          if ((/SWUSTMCL/i.test(f) || (/星启/.test(f) && /STMCL/i.test(f))) && /\.lnk$/i.test(f)) {
             try { fs.unlinkSync(path.join(sm, f)); log.info('已删除旧开始菜单项：' + f); } catch {}
           }
         }
@@ -512,7 +579,7 @@ app.whenReady().then(async () => {
         shell.writeShortcutLink(lnk, 'create', {
           target: exe,
           cwd: path.dirname(exe),
-          description: '星启 STMCL · Minecraft 启动器',
+          description: 'STMCL · Minecraft 启动器',
           icon: fs.existsSync(ico) ? ico : exe,
           iconIndex: 0,
         });
@@ -569,6 +636,10 @@ app.on('window-all-closed', () => {
   // 关闭启动器不结束正在运行的游戏窗口
   app.quit();
 });
+app.on('before-quit', () => {
+  mwState.allowClose = true;
+  if (tray) { try { tray.destroy(); } catch {} tray = null; }
+});
 
 // ------------------------------------------------------------ 5 分钟版本巡查
 async function startManifestWatch() {
@@ -587,7 +658,7 @@ async function startManifestWatch() {
         // 系统通知（可被设置关闭）
         if (settingsLib.all().autoCheck && Notification.isSupported()) {
           const n = new Notification({
-            title: '星启 STMCL',
+            title: 'STMCL',
             body: `Minecraft ${latest} 已发布，点击前往安装`,
             silent: false,
           });
@@ -634,6 +705,15 @@ function requireIdle(field, label) {
   if (busy[field]) throw new Error(`已有${label}任务在进行，请等待完成`);
 }
 
+// 安装/修复串行队列：多次点击不再报「已有安装任务在进行」，而是自动排队
+let installTail = Promise.resolve();
+function enqueueInstallTask(fn) {
+  const p = installTail.then(fn, fn);
+  installTail = p.catch(() => {});
+  return p;
+}
+const abortedError = () => { const e = new Error('已取消'); e.aborted = true; return e; };
+
 // ---------- 应用 / 窗口 ----------
 ipcMain.handle('app:info', () => ({
   version: app.getVersion(),
@@ -660,7 +740,15 @@ ipcMain.handle('app:state', async () => {
   };
 });
 
-ipcMain.on('win:minimize', () => win && win.minimize());
+ipcMain.on('win:minimize', () => { if (win) win.minimize(); });
+ipcMain.on('app:ui-ready', () => {
+  if (!win || win.isDestroyed()) return;
+  win.__rendererReady = true;
+  if (win.__paintReady && !win.__shown) {
+    win.__shown = true;
+    win.show();
+  }
+});
 ipcMain.on('win:maximize', () => {
   if (!win) return;
   if (win.isMaximized()) win.unmaximize();
@@ -731,6 +819,15 @@ ipcMain.handle('settings:save', (_e, patch) => {
         if (!['ask', 'minimize', 'close'].includes(value)) throw new Error('关闭行为无效');
         out.closeAction = value;
         break;
+      case 'autoHideOnGame':
+        out.autoHideOnGame = Boolean(value);
+        break;
+      case 'javaPath': {
+        const v = String(value || '').trim();
+        if (v && !fs.existsSync(v)) throw new Error('Java 路径不存在：' + v);
+        out.javaPath = v;
+        break;
+      }
       case 'dirNames': {
         const src = value && typeof value === 'object' ? value : {};
         const names = {};
@@ -874,7 +971,7 @@ ipcMain.handle('versions:sizes', async () => {
     const list = core.versions.listInstalled(gameDirs());
     for (const v of list) {
       try {
-        const size = await core.versions.dirSize(path.join(v.dir, 'versions', v.id));
+        const size = await core.versions.dirSize(v.instDir || path.join(v.dir, 'versions', v.id));
         send('versions:size', { dir: v.dir, id: v.id, size });
       } catch {} // 单个实例失败不能中断整轮推送
       await new Promise((r) => setTimeout(r, 30)); // 给其它 IPC 让路
@@ -898,7 +995,8 @@ ipcMain.handle('version:delete', async (_e, payload) => {
   if (!dir) throw new Error('缺少游戏目录');
   const instDir = core.safe.safeJoin(path.join(dir, 'versions'), id);
   if (!fs.existsSync(instDir)) {
-    // 已被删除（例如上一次其实成功但回报失败）：直接返回，让列表刷新掉它
+    // 已被删除（例如上一次其实成功但回报失败）：清掉历史记录并让列表刷新
+    try { core.history.remove(id, dir); } catch {}
     return { ok: true, alreadyGone: true };
   }
   try {
@@ -909,6 +1007,7 @@ ipcMain.handle('version:delete', async (_e, payload) => {
     if (/ENOENT|找不到|does not exist/i.test(msg)) return { ok: true, alreadyGone: true };
     throw new Error('移入回收站失败：文件可能被游戏、杀毒软件或资源管理器占用，关闭后重试');
   }
+  try { core.history.remove(id, dir); } catch {}
   log.info('实例已移入回收站：' + id);
   return { ok: true };
 });
@@ -918,14 +1017,32 @@ ipcMain.handle('install:start', async (_e, payload) => {
   const id = core.safe.assertVersionId(String((payload && payload.id) || ''));
   const url = String((payload && payload.url) || '');
   if (!core.safe.isHttpUrl(url)) throw new Error('版本元数据地址无效');
-  requireIdle('install', '安装');
-  busy.install = id;
-  const source = settingsLib.all().downloadSource === 'bmcl' ? 'bmcl' : 'mojang';
+  const key = 'install:' + id;
+  const versionDir = path.join(settingsLib.all().mcDir, 'versions', id);
+  const existedBefore = fs.existsSync(versionDir);
+  const ctl = startTask(key);
+  const report = (p) => send('install:progress', { id, cancelKey: key, ...p });
+  report({ stage: 'queued', message: '排队中…', percent: 0 });
   try {
-    const r = await core.install.install(id, { url }, source, (p) => send('install:progress', p));
-    return r;
+    return await enqueueInstallTask(async () => {
+      if (ctl.signal.aborted) throw abortedError();
+      busy.install = id;
+      const source = settingsLib.all().downloadSource === 'bmcl' ? 'bmcl' : 'mojang';
+      try {
+        return await core.install.install(id, { url }, source, report, { signal: ctl.signal });
+      } finally {
+        busy.install = null;
+      }
+    });
+  } catch (e) {
+    // 取消新安装：删除本次新建的版本目录，避免留下 26.3 这类空底座
+    if (e && e.aborted && !existedBefore) {
+      try { fs.rmSync(versionDir, { recursive: true, force: true }); } catch {}
+    }
+    report({ stage: e && e.aborted ? 'cancelled' : 'failed', message: String((e && e.message) || e), percent: 100 });
+    throw e;
   } finally {
-    busy.install = null;
+    endTask(key);
   }
 });
 
@@ -933,24 +1050,35 @@ ipcMain.handle('install:start', async (_e, payload) => {
 ipcMain.handle('game:repair', async (_e, payload) => {
   const id = core.safe.assertVersionId(String((payload && payload.id) || ''));
   const dir = String((payload && payload.dir) || settingsLib.all().mcDir);
-  requireIdle('install', '修复');
-  busy.install = `repair:${id}`;
-  const report = (p) => send('install:progress', { id, stage: 'repair', ...p });
+  const key = 'repair:' + id;
+  const ctl = startTask(key);
+  const report = (p) => send('install:progress', { id, cancelKey: key, stage: 'repair', ...p });
   try {
-    report({ message: '正在体检…', percent: 5 });
-    const c = core.repair.check(dir, id);
-    const mod = core.repair.modCheck(dir, id);
-    if (c.ok && !mod.missing.length) {
-      report({ stage: 'done', message: '依赖完整，无需修复', percent: 100 });
-      return { ok: true, fixed: 0, remaining: [] };
-    }
-    const missingCount = c.missing.length + mod.missing.length;
-    report({ message: `发现 ${missingCount} 个缺失/损坏文件或前置模组`, percent: 15 });
-    const r = await core.repair.fix(dir, id, (p) => report({ message: p.message || `补全文件 ${p.done}/${p.total}`, percent: 15 + Math.round((p.done / Math.max(1, p.total)) * 85) }));
-    report({ stage: 'done', message: r.remaining.length ? `仍有 ${r.remaining.length} 个未补齐` : '修复完成', percent: 100 });
-    return { ok: r.remaining.length === 0, fixed: r.fixed, remaining: r.remaining };
+    return await enqueueInstallTask(async () => {
+      if (ctl.signal.aborted) throw abortedError();
+      busy.install = `repair:${id}`;
+      try {
+        report({ message: '正在体检…', percent: 5 });
+        const c = core.repair.check(dir, id);
+        const mod = core.repair.modCheck(dir, id);
+        if (c.ok && !mod.missing.length) {
+          report({ stage: 'done', message: '依赖完整，无需修复', percent: 100 });
+          return { ok: true, fixed: 0, remaining: [] };
+        }
+        const missingCount = c.missing.length + mod.missing.length;
+        report({ message: `发现 ${missingCount} 个缺失/损坏文件或前置模组`, percent: 15 });
+        const r = await core.repair.fix(dir, id, (p) => report({ message: p.message || `补全文件 ${p.done}/${p.total}`, percent: 15 + Math.round((p.done / Math.max(1, p.total)) * 85) }), undefined, { signal: ctl.signal });
+        report({ stage: 'done', message: r.remaining.length ? `仍有 ${r.remaining.length} 个未补齐` : '修复完成', percent: 100 });
+        return { ok: r.remaining.length === 0, fixed: r.fixed, remaining: r.remaining };
+      } finally {
+        busy.install = null;
+      }
+    });
+  } catch (e) {
+    report({ stage: e && e.aborted ? 'cancelled' : 'failed', message: String((e && e.message) || e), percent: 100 });
+    throw e;
   } finally {
-    busy.install = null;
+    endTask(key);
   }
 });
 
@@ -1017,7 +1145,7 @@ async function launchGame(payload, signal) {
   const meta = core.versions.loadVersionJson(dir, id);
   let packMinJava = 0;
   try {
-    const marker = core.domainpacks.readMarker(path.join(dir || settingsLib.ensureGameDir(), 'versions', id));
+    const marker = core.domainpacks.readMarker(core.versions.instanceDir(dir || settingsLib.ensureGameDir(), id));
     const active = core.domainpacks.markerPacks(marker).find((entry) => entry.packId === marker.activePackId);
     packMinJava = Number(active && active.minJava) || 0;
   } catch {}
@@ -1122,9 +1250,17 @@ async function launchGame(payload, signal) {
   log.info(`启动游戏：${id}（隔离=${core.dirs.isIsolatedInstance(core.safe.safeJoin(path.join(dir, 'versions'), id)) ? '是' : '否'}，内存 ${s.memory}M）`);
 
   // 启动前确保中文（MC 只在启动时读 options.txt）
+  // 注意：gameDir 可能因「默认版本隔离」或实例设置而指向 versions/<id>，不能只看目录特征
   try {
-    const instDir0 = core.safe.safeJoin(path.join(dir, 'versions'), id);
-    ensureChineseLanguage(core.dirs.isIsolatedInstance(instDir0) ? instDir0 : dir);
+    const instDir0 = core.versions.instanceDir(dir, id);
+    let isolated0 = core.dirs.isIsolatedInstance(instDir0);
+    if (!isolated0) {
+      const cfg0 = core.instances.mergedLaunchOptions(instDir0, {});
+      if (cfg0.isolate === true) isolated0 = true;
+      else if (cfg0.isolate === false) isolated0 = false;
+      else if (settingsLib.all().isolateByDefault) isolated0 = true;
+    }
+    ensureChineseLanguage(isolated0 ? instDir0 : dir);
   } catch {}
 
   const sessionId = id + '#' + Date.now();
@@ -1139,16 +1275,21 @@ async function launchGame(payload, signal) {
       core.history.record({ id, dir, start: sessionStart, end: Date.now() });
       gameProcs.delete(sessionId);
       send('game:exit', { id, pid: proc.pid || 0, code, running: gameProcs.size });
+      if (autoHiddenForGame && gameProcs.size === 0) showMainWindow();
     },
     onError: (err) => {
       log.error(`游戏进程错误（${id}）：${err.message}`);
       gameProcs.delete(sessionId);
       send('game:error', { message: err.message, id, pid: proc.pid || 0, running: gameProcs.size });
+      if (autoHiddenForGame && gameProcs.size === 0) showMainWindow();
     },
   });
   gameProcs.set(sessionId, { id, dir, start: sessionStart, proc });
 
   send('game:started', { id, pid: proc.pid, gameDir: proc.gameDir, isolated: proc.isolated, running: gameProcs.size });
+  if (settingsLib.all().autoHideOnGame && win && !win.isDestroyed()) {
+    try { win.hide(); win.setSkipTaskbar(true); autoHiddenForGame = true; } catch {}
+  }
   try { focusGameWindow(); } catch {}
   return { ok: true, pid: proc.pid, isolated: proc.isolated };
 }
@@ -1161,6 +1302,7 @@ ipcMain.handle('game:kill', async (_e, payload) => {
     if (wantPid && rec.proc.pid !== wantPid) continue;
     try { rec.proc.child.kill(); killed += 1; gameProcs.delete(sid); } catch {}
   }
+  if (autoHiddenForGame && gameProcs.size === 0) showMainWindow();
   return { ok: killed > 0, killed };
 });
 
@@ -1211,14 +1353,26 @@ ipcMain.handle('loader:install', async (_e, payload) => {
   const mc = core.safe.assertVersionId(String((payload && payload.mc) || ''), '游戏版本');
   const loaderVersion = String((payload && payload.loaderVersion) || '');
   const instanceId = payload && payload.instanceId ? core.safe.assertVersionId(String(payload.instanceId)) : '';
-  requireIdle('loader', '加载器安装');
-  busy.loader = loader;
-  const source = settingsLib.all().downloadSource === 'bmcl' ? 'bmcl' : 'mojang';
+  const key = 'loader:' + (instanceId || mc) + ':' + loader;
+  const ctl = startTask(key);
+  const report = (p) => send('loader:progress', { loader, cancelKey: key, ...p });
+  report({ stage: 'queued', message: '排队中…', percent: 0 });
   try {
-    const r = await core.loaders.install(loader, mc, loaderVersion, instanceId, source, (p) => send('loader:progress', { loader, ...p }));
-    return r;
+    return await enqueueInstallTask(async () => {
+      if (ctl.signal.aborted) throw abortedError();
+      busy.loader = loader;
+      const source = settingsLib.all().downloadSource === 'bmcl' ? 'bmcl' : 'mojang';
+      try {
+        return await core.loaders.install(loader, mc, loaderVersion, instanceId, source, report, { signal: ctl.signal });
+      } finally {
+        busy.loader = null;
+      }
+    });
+  } catch (e) {
+    report({ stage: e && e.aborted ? 'cancelled' : 'failed', message: String((e && e.message) || e), percent: 100 });
+    throw e;
   } finally {
-    busy.loader = null;
+    endTask(key);
   }
 });
 
@@ -1299,14 +1453,16 @@ ipcMain.handle('modpack:install', async (_e, payload) => {
 ipcMain.handle('pack:exportPlan', (_e, payload) => {
   const id = core.safe.assertVersionId(String((payload && payload.id) || ''));
   const dir = String((payload && payload.dir) || '');
-  return core.modpack.exportPlan(settingsLib.all().mcDir, id, dir);
+  return core.modpack.exportPlan(settingsLib.all().mcDir, id, dir, (payload && payload.options) || {});
 });
 
 ipcMain.handle('pack:exportPick', async (_e, payload) => {
   const r = await dialog.showSaveDialog(win, {
-    title: '导出整合包',
-    defaultPath: `${(payload && payload.defaultName) || 'modpack'}.zip`,
-    filters: [{ name: '整合包', extensions: ['zip'] }],
+    title: (payload && payload.format === 'pcl') ? '导出 PCL 兼容整合包' : '导出 Modrinth 整合包',
+    defaultPath: `${(payload && payload.defaultName) || 'modpack'}${payload && payload.format === 'mrpack' ? '.mrpack' : '.zip'}`,
+    filters: payload && payload.format === 'mrpack'
+      ? [{ name: 'Modrinth 整合包', extensions: ['mrpack'] }]
+      : [{ name: '整合包', extensions: ['zip'] }],
   });
   if (r.canceled) return null;
   return r.filePath;
@@ -1315,13 +1471,23 @@ ipcMain.handle('pack:exportPick', async (_e, payload) => {
 ipcMain.handle('pack:export', async (_e, payload) => {
   const id = core.safe.assertVersionId(String((payload && payload.id) || ''));
   const dest = String((payload && payload.dest) || '');
-  if (!dest.toLowerCase().endsWith('.zip')) throw new Error('导出文件必须是 zip');
+  const format = payload && payload.format === 'pcl' ? 'pcl' : 'mrpack';
+  if (!dest.toLowerCase().endsWith('.zip') && !(format === 'mrpack' && dest.toLowerCase().endsWith('.mrpack'))) {
+    throw new Error(format === 'mrpack' ? 'Modrinth 整合包必须是 .mrpack 或 .zip' : '导出文件必须是 zip');
+  }
   const dir = String((payload && payload.dir) || '');
   // dir = payload.dir（游戏根，与计划阶段一致）；exportPack 内部拼 versions
   const root = String((payload && payload.dir) || '') || settingsLib.all().mcDir;
-  const r = await core.modpack.exportPack(root, id, dest, (p) => send('pack:exportProgress', { id, ...p }), dir);
+  const r = await core.modpack.exportPack(root, id, dest, (p) => send('pack:exportProgress', { id, ...p }), dir, format, (payload && payload.options) || {});
 
-  log.info(`整合包已导出：${dest}`);
+  try {
+    const info = core.modpack.inspect(dest);
+    r.detected = { format: info.format, name: info.name, mcVersion: info.mcVersion || '', loader: info.loader || '', loaderVersion: info.loaderVersion || '', modCount: info.modCount || 0 };
+  } catch (e) {
+    r.detected = null;
+    r.detectError = e.message;
+  }
+  log.info(`整合包已导出：${dest}（识别：${r.detected ? r.detected.format : '失败'}）`);
   return r;
 });
 
@@ -1338,18 +1504,25 @@ ipcMain.handle('content:search', (_e, payload) => core.content.search(payload ||
 ipcMain.handle('content:versions', (_e, payload) => core.content.versions(payload.source || 'modrinth', payload.projectId, payload || {}));
 
 ipcMain.handle('content:install', async (_e, payload) => {
-  requireIdle('content', '资源安装');
-  busy.content = payload.projectId;
-  const ctl = startTask('content');
+  const key = 'content:' + String(payload.projectId || '') + ':' + Date.now().toString(36);
+  const ctl = startTask(key);
+  const report = (p) => send('content:progress', { projectId: payload.projectId, source: payload.source, cancelKey: key, ...p });
+  report({ stage: 'queued', message: '排队中…', percent: 0 });
   try {
-    return await core.content.install(
-      payload,
-      (p) => send('content:progress', { projectId: payload.projectId, source: payload.source, cancelKey: 'content', ...p }),
-      { signal: ctl.signal },
-    );
+    return await enqueueInstallTask(async () => {
+      if (ctl.signal.aborted) throw abortedError();
+      busy.content = payload.projectId;
+      try {
+        return await core.content.install(payload, report, { signal: ctl.signal });
+      } finally {
+        busy.content = null;
+      }
+    });
+  } catch (e) {
+    report({ stage: e && e.aborted ? 'cancelled' : 'failed', message: String((e && e.message) || e), percent: 100 });
+    throw e;
   } finally {
-    busy.content = null;
-    endTask('content');
+    endTask(key);
   }
 });
 
@@ -1715,7 +1888,7 @@ ipcMain.handle('domainpacks:scan', async (_e, payload) => {
     String((payload && payload.id) || '')
   );
   const { versionJson, ...instance } = scan.instance;
-  const instanceDir = path.join(String((payload && payload.dir) || ''), 'versions', String((payload && payload.id) || ''));
+  const instanceDir = core.versions.instanceDir(String((payload && payload.dir) || ''), String((payload && payload.id) || ''));
   const marker = core.domainpacks.readMarker(instanceDir);
   const activeDomain = core.domains.active();
   const packs = core.domainpacks.markerPacks(marker).filter((entry) => entry.domainId === activeDomain.id);
@@ -1774,7 +1947,7 @@ ipcMain.handle('domainpacks:setToken', (_e, payload) => ({
 ipcMain.handle('domainpacks:installed', () => {
   const out = [];
   for (const inst of core.versions.listInstalled(gameDirs())) {
-    const instanceDir = path.join(inst.dir, 'versions', inst.id);
+    const instanceDir = inst.instDir || core.versions.instanceDir(inst.dir, inst.id);
     const marker = core.domainpacks.readMarker(instanceDir);
     for (const entry of core.domainpacks.markerPacks(marker)) {
       out.push({
@@ -1855,7 +2028,7 @@ ipcMain.handle('app:close-choice', (_e, payload) => {
     } catch {}
   }
   if (!win || win.isDestroyed()) return { ok: false };
-  if (act === 'minimize') win.minimize();
+  if (act === 'minimize') hideToTray();
   else { mwState.allowClose = true; win.close(); }
   return { ok: true };
 });
@@ -2104,4 +2277,4 @@ ipcMain.handle('game:copyCommand', (_e, payload) => {
   return true;
 });
 
-log.info(`星启 STMCL ${app.getVersion()} 启动（GPU 兼容标记：${settingsLib.all().gpuFallback ? '开' : '关'}）`);
+log.info(`STMCL ${app.getVersion()} 启动（GPU 兼容标记：${settingsLib.all().gpuFallback ? '开' : '关'}）`);

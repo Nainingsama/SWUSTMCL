@@ -18,7 +18,13 @@
     const text = h('div.muted', { style: { lineHeight: '1.8' } }, title);
     const detail = h('div.faint', { style: { marginTop: '6px', minHeight: '18px' } }, '请稍候，正在准备游戏进程…');
     let canceled = false;
+    let startedPid = 0;
     let cancelBtn = null;
+    const offStart = window.smcl.onGameStarted ? window.smcl.onGameStarted((p) => {
+      if (!p || !p.pid) return;
+      startedPid = p.pid;
+      if (canceled) window.smcl.kill(p.pid).catch(() => {});
+    }) : () => {};
     cancelBtn = h('button.btn', {
       onclick: async () => {
         if (canceled) return;
@@ -27,6 +33,7 @@
         cancelBtn.textContent = '正在取消…';
         detail.textContent = '正在取消启动，请稍候…';
         try { await window.smcl.cancelTask('launch'); } catch {}
+        if (startedPid) { try { await window.smcl.kill(startedPid); } catch {} }
       },
     }, '取消');
     const modal = window.Modal.open({
@@ -46,12 +53,13 @@
     });
     try {
       const result = await task();
-      off();
+      off(); offStart();
       modal.close(true);
-      window.Toast.success(options.success || '游戏启动成功');
+      if (canceled) window.Toast.info('已取消启动');
+      else window.Toast.success(options.success || '游戏启动成功');
       return result;
     } catch (error) {
-      off();
+      off(); offStart();
       modal.close(false);
       const msg = cleanError(error);
       if (canceled || /取消/.test(msg)) window.Toast.info('已取消启动');

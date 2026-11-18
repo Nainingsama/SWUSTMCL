@@ -43,6 +43,7 @@ const DEFAULTS = {
   autoCheck: true, // 每 5 分钟后台检查新正式版
   autoUpdateCheck: true, // 检查启动器自身更新
   gpuFallback: false, // GPU 进程崩溃后的兼容模式标记
+  autoHideOnGame: true, // 启动游戏后隐藏到托盘，所有游戏退出后自动恢复
   autoFixInjectors: true, // 自动结束搜狗等输入法的注入型附加组件（防启动闪退）
   isolateByDefault: false,
   autoDownloadJava: true, // 启动时缺对应版本 Java 自动下载运行时 // 版本隔离：所有实例的 gameDir 默认指向各自实例目录
@@ -96,6 +97,9 @@ function load() {
     resolution: { ...DEFAULTS.resolution, ...(disk.resolution || {}) },
     wallpaper: { ...DEFAULTS.wallpaper, ...(disk.wallpaper || {}) },
   };
+  // 旧版把未白名单字段按布尔值保存，javaPath 可能被写成 true
+  if (typeof cache.javaPath !== 'string') cache.javaPath = '';
+  if (typeof cache.autoHideOnGame !== 'boolean') cache.autoHideOnGame = true;
   return cache;
 }
 

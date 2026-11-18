@@ -54,7 +54,7 @@ function listDir(p) {
 }
 
 /** 自动扫描的候选根目录（常见 JDK 发行商） */
-function candidateDirs() {
+function candidateDirs(deep = false) {
   const dirs = [];
   const pf = process.env.ProgramFiles || 'C:\\Program Files';
   const pf86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
@@ -63,6 +63,19 @@ function candidateDirs() {
   for (const base of [pf, pf86, localApp]) {
     for (const v of vendors) dirs.push(path.join(base, v));
     dirs.push(path.join(base, 'Programs', 'Eclipse Adoptium'));
+  }
+  // Java 可能装在 D:/E: 等非系统盘：只在深度检测或 C 盘没找到时扫描
+  if (deep) {
+    for (const letter of 'DEFGHIJKLMNOPQRSTUVWXYZ') {
+      const root = letter + ':\\';
+      if (!exists(root)) continue;
+      for (const sub of ['Program Files', 'Program Files (x86)', 'Java', 'jdk', 'Dev', 'Development', 'SDK']) {
+        const base = path.join(root, sub);
+        if (!exists(base)) continue;
+        for (const v of vendors) dirs.push(path.join(base, v));
+        if (!/^Program Files/i.test(sub)) dirs.push(base);
+      }
+    }
   }
   return dirs;
 }
@@ -132,7 +145,7 @@ function fromMojangRuntime(mcDir) {
 /**
  * @returns {Promise<Array<{path:string, java:string, version:string, major:number, bits:number, source:string}>>}
  */
-async function detect({ mcDirs = [], extraDirs = [], preferred } = {}) {
+async function detect({ mcDirs = [], extraDirs = [], preferred, deep = false } = {}) {
   const raw = [];
   const push = (p, source) => {
     if (p && exists(p)) raw.push({ exe: p, source });
@@ -141,8 +154,17 @@ async function detect({ mcDirs = [], extraDirs = [], preferred } = {}) {
   if (preferred) push(preferred, '手动指定');
   if (process.env.JAVA_HOME) push(path.join(process.env.JAVA_HOME, 'bin', IS_WIN ? 'javaw.exe' : 'java'), 'JAVA_HOME');
   fromPath().forEach((p) => push(p, 'PATH'));
-  for (const dir of candidateDirs()) {
+  const primaryDirs = candidateDirs(false);
+  for (const dir of primaryDirs) {
     for (const p of scanJavaIn(dir, 2)) push(p, '安装目录');
+  }
+  // C 盘一个候选都没有，或显式深度检测时，再扫非系统盘
+  if (deep || raw.length === 0) {
+    const seenDirs = new Set(primaryDirs);
+    for (const dir of candidateDirs(true)) {
+      if (seenDirs.has(dir)) continue;
+      for (const p of scanJavaIn(dir, 2)) push(p, '安装目录');
+    }
   }
   // 用户额外指定的扫描目录（设置页可加）
   for (const dir of extraDirs || []) {

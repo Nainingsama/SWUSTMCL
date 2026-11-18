@@ -70,7 +70,18 @@ function inspect(file) {
     if (!hasOverrides) throw new Error('无法识别的整合包格式（缺少 modrinth.index.json / manifest.json / mods 目录）');
     format = 'raw';
     const modCount = entries.filter((e) => /^mods\/[^/]+\.jar$/i.test(e.entryName.replace(/\\/g, '/'))).length;
-    return { format, name: path.basename(file).replace(/\.(zip|mrpack)$/i, ''), mcVersion: '', loader: '', loaderVersion: '', modCount, files: [], overridesDir: '' };
+    let mcVersion = '', loader = '', loaderVersion = '', packName = '';
+    try {
+      const metaEntry = findEntry('stmcl-pack.json');
+      if (metaEntry) {
+        const meta = JSON.parse(zip.readAsText(metaEntry)) || {};
+        mcVersion = meta.minecraft || '';
+        loader = meta.loader || '';
+        loaderVersion = meta.loaderVersion || '';
+        packName = meta.name || '';
+      }
+    } catch {}
+    return { format, name: packName || path.basename(file).replace(/\.(zip|mrpack)$/i, ''), mcVersion, loader, loaderVersion, modCount, files: [], overridesDir: '' };
   }
 
   let mcVersion = '', loader = '', loaderVersion = '';
@@ -423,13 +434,36 @@ async function netDownloadFirst(urls, dest, hashes, size, signal, onBytes) {
 }
 
 // ---------------------------------------------------------------- 导出
-const EXPORT_INCLUDES = ['mods', 'config', 'options.txt', 'resourcepacks', 'shaderpacks', 'defaultconfigs', 'kubejs', 'scripts'];
+const EXPORT_CATEGORIES = {
+  mods: { paths: ['mods'], default: true },
+  modConfig: {
+    paths: ['config', 'defaultconfigs', 'kubejs', 'scripts', 'patchouli_books', 'local', 'ftbquests', 'quests', 'betterquesting', 'openloader', 'global_packs', 'datapacks'],
+    default: true,
+  },
+  bodySettings: { paths: ['options.txt'], default: true },
+  personal: { paths: ['command_history.txt', 'usercache.json', 'hotbar.nbt'], default: false },
+  maps: { paths: ['XaeroWorldMap', 'journeymap', 'mapping', 'xaero'], default: false },
+  screenshots: { paths: ['screenshots'], default: false },
+  servers: { paths: ['servers.dat'], default: false },
+  resources: { paths: ['resourcepacks', 'shaderpacks'], default: false },
+};
+
+function exportPaths(options = {}) {
+  const out = [];
+  for (const [key, def] of Object.entries(EXPORT_CATEGORIES)) {
+    const on = options[key] === undefined ? def.default : Boolean(options[key]);
+    if (on) out.push(...def.paths);
+  }
+  // 去重并保持顺序
+  return [...new Set(out)];
+}
+
 
 /**
  * 生成导出计划：列出会被打包的文件与体积，让用户确认。
  * @returns {{files:[{path,size}], totalBytes, loader, loaderVersion, mcVersion}}
  */
-function exportPlan(mcDir, instanceId, dirOverride) {
+function exportPlan(mcDir, instanceId, dirOverride, options = {}) {
   safe.assertVersionId(instanceId);
   // dirOverride：跨目录实例（PCL/HMCL 隔离实例不在主 mcDir 下），同样在 versions/ 层
   const dir = dirOverride
@@ -448,7 +482,7 @@ function exportPlan(mcDir, instanceId, dirOverride) {
     } catch {}
   };
 
-  for (const name of EXPORT_INCLUDES) {
+  for (const name of exportPaths(options)) {
     const abs = path.join(dir, name);
     if (!fs.existsSync(abs)) continue;
     const st = fs.statSync(abs);
@@ -459,6 +493,11 @@ function exportPlan(mcDir, instanceId, dirOverride) {
   let loader = '', loaderVersion = '', mcVersion = '';
   if (meta) {
     mcVersion = versionLib.guessMcVersion(instanceId, meta);
+    if (!mcVersion) {
+      try { mcVersion = JSON.parse(fs.readFileSync(path.join(dir, 'swustmcl-instance.json'), 'utf8')).mergedFrom || ''; } catch {}
+    }
+    // PCL / HMCL 隔离实例：版本号在 PCL/Setup.ini 的 VersionVanillaName
+    if (!mcVersion) mcVersion = versionLib.pclMcVersion(dir);
     const l = versionLib.loaderOf(instanceId, meta);
     if (l !== '原版') {
       loader = l.toLowerCase();
@@ -467,13 +506,44 @@ function exportPlan(mcDir, instanceId, dirOverride) {
       if (loader === 'fabric' || loader === 'quilt') {
         const lm = String(instanceId).match(/^(?:fabric|quilt)-loader-([\d.]+)-/i);
         if (lm) loaderVersion = lm[1];
+        if (!loaderVersion) {
+          for (const lib of meta.libraries || []) {
+            const parts = String((lib && lib.name) || '').split(':');
+            if (parts.length >= 3 && /^(?:net\.fabricmc|org\.quiltmc)$/i.test(parts[0]) && /^(?:fabric|quilt)-loader$/i.test(parts[1])) {
+              loaderVersion = parts[2];
+              break;
+            }
+          }
+        }
+      }
+      // Forge/NeoForge 的版本通常在库坐标里：net.minecraftforge:forge:1.20.1-47.3.0
+      if (!loaderVersion && (loader === 'forge' || loader === 'neoforge')) {
+        for (const lib of meta.libraries || []) {
+          const parts = String((lib && lib.name) || '').split(':');
+          if (parts.length < 3) continue;
+          const group = parts[0];
+          const ver = parts[2];
+          if (!/^(?:net\.minecraftforge|net\.neoforged)$/i.test(group)) continue;
+          if (!/-/.test(ver)) {
+            if (loader === 'neoforge') { loaderVersion = ver; break; }
+            continue;
+          }
+          if (mcVersion && !ver.startsWith(mcVersion + '-') && loader !== 'neoforge') continue;
+          loaderVersion = ver.slice(ver.indexOf('-') + 1);
+          break;
+        }
       }
     }
   }
 
+  const questFiles = files.filter((f) => /(^|\/)(config|defaultconfigs)\/ftbquests\/|(^|\/)(ftbquests|quests|betterquesting)\/|(^|\/)patchouli_books\//i.test(f.path)).length;
   return {
     id: instanceId,
     dir, // 实例实际所在目录（跨目录实例也正确）
+    packName: String(options.packName || instanceId),
+    packVersion: String(options.packVersion || '1.0.0'),
+    options,
+    questFiles,
     files,
     totalBytes: files.reduce((s, f) => s + f.size, 0),
     loader,
@@ -502,25 +572,76 @@ function walkCollect(dir, rel, files, add, depth) {
 }
 
 /** 导出为 Modrinth 格式 zip（modrinth.index.json + overrides/） */
-async function exportPack(mcDir, instanceId, destZip, onProgress, dirOverride) {
-  const plan = exportPlan(mcDir, instanceId, dirOverride);
+async function exportPack(mcDir, instanceId, destZip, onProgress, dirOverride, format = 'mrpack', options = {}) {
+  const plan = exportPlan(mcDir, instanceId, dirOverride, options);
   const zip = new AdmZip();
+
+  if (format === 'pcl') {
+    // PCL / HMCL / YMCL 都能识别的 CurseForge 结构：
+    // manifest.json 提供 MC 与加载器版本，内容全部放在 overrides/，不包含启动器程序
+    const loaderId = plan.loader && plan.loaderVersion ? `${plan.loader}-${plan.loaderVersion}` : '';
+    const manifest = {
+      manifestType: 'minecraftModpack',
+      manifestVersion: 1,
+      name: plan.packName,
+      version: plan.packVersion,
+      author: 'STMCL',
+      description: `由 STMCL 导出${plan.questFiles ? `，含 ${plan.questFiles} 个任务书文件` : ''}`,
+      minecraft: {
+        version: plan.mcVersion || '',
+        modLoaders: loaderId ? [{ id: loaderId, primary: true }] : [],
+      },
+      files: [],
+      overrides: 'overrides',
+    };
+    zip.addFile('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'));
+    zip.addFile('stmcl-pack.json', Buffer.from(JSON.stringify({
+      format: 'stmcl-pcl',
+      name: plan.packName,
+      packVersion: plan.packVersion,
+      minecraft: plan.mcVersion || '',
+      loader: plan.loader || '',
+      loaderVersion: plan.loaderVersion || '',
+      questFiles: plan.questFiles,
+      createdAt: new Date().toISOString(),
+    }, null, 2), 'utf8'));
+    if (plan.mcVersion) {
+      const loaderKey = plan.loader === 'fabric' ? 'VersionFabric'
+        : plan.loader === 'quilt' ? 'VersionQuilt'
+          : plan.loader === 'forge' ? 'VersionForge'
+            : plan.loader === 'neoforge' ? 'VersionNeoForge' : '';
+      const lines = [
+        'VersionVanillaName:' + plan.mcVersion,
+        plan.loaderVersion && loaderKey ? `${loaderKey}:${plan.loaderVersion}` : '',
+        `Info:正式版 ${plan.mcVersion}${plan.loader ? ', ' + plan.loader + ' ' + (plan.loaderVersion || '') : ''}`,
+        'VersionArgumentIndieV2:True',
+        'VersionArgumentIndie:1',
+      ].filter(Boolean);
+      zip.addFile('overrides/PCL/Setup.ini', Buffer.from(lines.join('\r\n') + '\r\n', 'utf8'));
+    }
+    const total = plan.files.length;
+    let done = 0;
+    for (const f of plan.files) {
+      const abs = path.join(plan.dir || path.join(mcDir, 'versions', instanceId), f.path);
+      const relDir = path.dirname(f.path);
+      try { zip.addLocalFile(abs, relDir === '.' ? 'overrides' : 'overrides/' + relDir, path.basename(f.path)); } catch {}
+      done += 1;
+      if (onProgress && (done % 20 === 0 || done === total)) {
+        onProgress({ done, total, percent: Math.round((done / Math.max(1, total)) * 100) });
+      }
+    }
+    await fsp.writeFile(destZip, zip.toBuffer());
+    return { file: destZip, count: total, bytes: plan.totalBytes, format };
+  }
 
   const index = {
     formatVersion: 1,
     game: 'minecraft',
-    versionId: instanceId,
-    name: instanceId,
-    summary: `由 星启 SWUSTMCL 导出`,
-    files: plan.files
-      .filter((f) => f.path.startsWith('mods/') && f.path.endsWith('.jar'))
-      .map((f) => ({
-        path: f.path,
-        hashes: { sha1: sha1Of(path.join(plan.dir || path.join(mcDir, 'versions', instanceId), f.path)) },
-        env: { client: 'required', server: 'required' },
-        downloads: [],
-        fileSize: f.size,
-      })),
+    versionId: plan.packVersion || instanceId,
+    name: plan.packName,
+    summary: `由 STMCL 导出${plan.questFiles ? ` · 含 ${plan.questFiles} 个任务书文件` : ''}`,
+    // 所有选中内容都放在 overrides/ 里；files 留空避免第三方启动器去请求空 downloads
+    files: [],
     dependencies: {
       ...(plan.mcVersion ? { minecraft: plan.mcVersion } : {}),
       ...(plan.loader === 'fabric' ? { 'fabric-loader': plan.loaderVersion || 'latest' } : {}),

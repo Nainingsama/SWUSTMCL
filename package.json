@@ -1,8 +1,8 @@
 {
   "name": "swustmcl",
   "productName": "STMCL",
-  "version": "1.2.9",
-  "description": "星启 STMCL — 西南科技大学 Minecraft 启动器",
+  "version": "1.2.10",
+  "description": "STMCL — 西南科技大学 Minecraft 启动器",
   "main": "main/main.js",
   "author": "SWUSTMCL Contributors",
   "license": "MIT",
@@ -68,8 +68,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "星启 STMCL",
-      "uninstallDisplayName": "星启 STMCL",
+      "shortcutName": "STMCL",
+      "uninstallDisplayName": "STMCL",
       "language": "2052",
       "installerLanguages": [
         "zh_CN"

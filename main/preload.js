@@ -14,6 +14,7 @@ const on = (channel, cb) => {
 contextBridge.exposeInMainWorld('smcl', {
   // 应用 / 窗口
   state: () => ipcRenderer.invoke('app:state'),
+  uiReady: () => ipcRenderer.send('app:ui-ready'),
   win: {
     minimize: () => ipcRenderer.send('win:minimize'),
     maximize: () => ipcRenderer.send('win:maximize'),
@@ -72,9 +73,9 @@ contextBridge.exposeInMainWorld('smcl', {
   inspectPack: (file) => ipcRenderer.invoke('modpack:inspect', { file }),
   installPack: (file, name) => ipcRenderer.invoke('modpack:install', { file, name: name || '' }),
   onPack: (cb) => on('modpack:progress', cb),
-  exportPlan: (id, dir) => ipcRenderer.invoke('pack:exportPlan', { id, dir }),
-  exportPick: (defaultName) => ipcRenderer.invoke('pack:exportPick', { defaultName }),
-  exportPack: (id, dest, dir) => ipcRenderer.invoke('pack:export', { id, dir, dest }),
+  exportPlan: (id, dir, options) => ipcRenderer.invoke('pack:exportPlan', { id, dir, options }),
+  exportPick: (defaultName, format) => ipcRenderer.invoke('pack:exportPick', { defaultName, format }),
+  exportPack: (id, dest, dir, format, options) => ipcRenderer.invoke('pack:export', { id, dir, dest, format, options }),
   onExportProgress: (cb) => on('pack:exportProgress', cb),
 
   // 资源

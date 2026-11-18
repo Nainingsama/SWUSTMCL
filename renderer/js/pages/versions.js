@@ -5,6 +5,7 @@
  */
 (function () {
   const { h, fmtSize } = window.Dom;
+  const instPathOf = (v) => v.instDir || [v.dir, 'versions', v.id].join('\\');
   let rootEl = null;
   let searchEl = null;
   let filterLoader = 'all';
@@ -75,7 +76,7 @@
   }
 
   function openFolderOf(v) {
-    return window.smcl.openPath([v.dir, 'versions', v.id].join('\\')).catch((e) => window.Toast.error(e.message));
+    return window.smcl.openPath(instPathOf(v)).catch((e) => window.Toast.error(e.message));
   }
 
   function drawAll() {
@@ -107,6 +108,7 @@
       ['PCL', 'PCL'],
       ['HMCL', 'HMCL'],
       ['BakaXL', 'BakaXL'],
+      ['Axolotl', '美西螈启动器'],
       ['custom', '自定义文件夹'],
     ];
     const kindLabel = (k) => (GROUPS.find((g) => g[0] === k) || [k, k || '其他'])[1];
@@ -329,7 +331,7 @@
     }
     // 按实例所在文件夹分组：文件夹之间用分组标题隔开，组内沿用当前排序方式
     const customNames = (window.Store.get('settings') || {}).dirNames || {};
-    const KIND_ORDER = ['primary', 'official', 'PCL', 'HMCL', 'BakaXL', 'custom'];
+    const KIND_ORDER = ['primary', 'official', 'PCL', 'HMCL', 'BakaXL', 'Axolotl', 'custom'];
     const dirGroups = new Map();
     for (const v of filtered) {
       const key = v.dir || '';
@@ -563,7 +565,7 @@
       return d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0')
         + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
     };
-    const savesDir = [v.dir, 'versions', v.id, 'saves'].join('\\');
+    const savesDir = [instPathOf(v), 'saves'].join('\\');
     window.smcl.saves().then((all) => {
       const list = (Array.isArray(all) ? all : [])
         .filter((x) => x.dir === v.dir && x.instanceId === v.id)
@@ -866,7 +868,7 @@
   // ---------------------------------------------------------- Mod 管理（详情页「模组」标签 / 弹窗共用）
   function buildModsPane(v) {
     // 隔离实例的 mods 在 versions/<id>/mods，共享实例在游戏根目录
-    const modsDirOf = () => (v.isolated ? [v.dir, 'versions', v.id, 'mods'] : [v.dir, 'mods']).join('\\');
+    const modsDirOf = () => (v.isolated ? [instPathOf(v), 'mods'] : [v.dir, 'mods']).join('\\');
     const host = h('div');
     let searchEl = null;
     let allMods = [];

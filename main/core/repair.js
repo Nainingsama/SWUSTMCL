@@ -24,7 +24,7 @@ function collectExpected(mcDir, id) {
     const c = meta.downloads.client;
     out.push({
       url: c.url,
-      dest: path.join(mcDir, 'versions', id, `${id}.jar`),
+      dest: path.join(versionLib.instanceDir(mcDir, id), `${id}.jar`),
       size: c.size || 0,
       sha1: c.sha1 || '',
       expectZip: true,
@@ -149,7 +149,7 @@ function modCheck(mcDir, id) {
     const meta = versionLib.loadVersionJson(mcDir, id);
     const loader = versionLib.loaderOf(id, meta);
     if (loader !== 'Fabric') return { missing: [] };
-    const modsDir = path.join(mcDir, 'versions', id, 'mods');
+    const modsDir = path.join(versionLib.instanceDir(mcDir, id), 'mods');
     let jars = [];
     try { jars = fs.readdirSync(modsDir).filter((f) => /\.jar$/i.test(f)); } catch {}
     if (!jars.length) return { missing: [] };
@@ -158,7 +158,7 @@ function modCheck(mcDir, id) {
     if (!jars.some((f) => jarNeedsFabricApi(path.join(modsDir, f)))) return { missing: [] };
     const mc = versionLib.guessMcVersion(id, meta) || versionLib.guessMcVersion(meta.inheritsFrom, null) || (() => {
       // 合并导入实例的版本号保存在 swustmcl-instance.json 的 mergedFrom（如 1.21.1）
-      try { return JSON.parse(fs.readFileSync(path.join(mcDir, 'versions', id, 'swustmcl-instance.json'), 'utf8')).mergedFrom || ''; } catch { return ''; }
+      try { return JSON.parse(fs.readFileSync(path.join(versionLib.instanceDir(mcDir, id), 'swustmcl-instance.json'), 'utf8')).mergedFrom || ''; } catch { return ''; }
     })();
     return { missing: [{ name: 'fabric-api', kind: 'mod', mcVersion: mc }] };
   } catch {
@@ -197,7 +197,7 @@ async function ensureFabricApi(mcDir, id, onProgress, signal) {
     ? 'https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/' + encodeURIComponent(ver) + '/fabric-api-' + encodeURIComponent(ver) + '.jar'
     : '';
   const urls = [...new Set([maven, file.url].filter(Boolean))];
-  const dest = path.join(mcDir, 'versions', id, 'mods', file.filename || 'fabric-api.jar');
+  const dest = path.join(versionLib.instanceDir(mcDir, id), 'mods', file.filename || 'fabric-api.jar');
   const total = Number(file.size) || 0;
   let received = 0;
   const reportBytes = (n) => {

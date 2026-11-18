@@ -34,4 +34,12 @@ function record(entry) {
   } catch {}
 }
 
-module.exports = { read, record };
+function remove(id, dir) {
+  try {
+    const a = read();
+    const keep = a.filter((s) => !(String(s.id) === String(id) && (!dir || !s.dir || String(s.dir) === String(dir))));
+    if (keep.length !== a.length) fs.writeFileSync(file(), JSON.stringify(keep), 'utf8');
+  } catch {}
+}
+
+module.exports = { read, record, remove };

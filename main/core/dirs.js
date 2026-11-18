@@ -168,7 +168,12 @@ function all(settings) {
     push(mc, root.kind, root.kind);
   }
 
-  for (const p of settings.extraDirs || []) push(p, 'custom', '自定义');
+  const dirNames = settings.dirNames || {};
+  for (const p of settings.extraDirs || []) {
+    // 美西螈等启动器的 profiles 路径：只有用户手动导入后才出现
+    const kind = /red\.ghs\.|axolotl|ymcl|profiles/i.test(p) ? 'Axolotl' : 'custom';
+    push(p, kind, dirNames[p] || path.basename(p) || '自定义');
+  }
 
   return list;
 }

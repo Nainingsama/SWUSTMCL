@@ -114,6 +114,7 @@
       },
     }, '立即优化');
     const fsSwitch = h('button.switch' + (s.fullscreen ? '.on' : ''), { onclick: () => { fsSwitch.classList.toggle('on'); set({ fullscreen: fsSwitch.classList.contains('on') }); } });
+    const autoHideSwitch = h('button.switch' + (s.autoHideOnGame !== false ? '.on' : ''), { onclick: () => { autoHideSwitch.classList.toggle('on'); set({ autoHideOnGame: autoHideSwitch.classList.contains('on') }); } });
 
     const gameDirInput = h('input.input.mono', { value: s.mcDir || '', readonly: true, style: { fontSize: '11.5px' } });
     const gameDirText = h('div.faint.mono', {
@@ -142,8 +143,9 @@
         row('内存分配', '自动平衡 = 物理内存 35%（受当前可用内存约束，2048~8192 MB）；拖滑杆或直接输入数值会切换为手动', memRow, true),
         row('启动前优化内存', '每次启动游戏前整理一次系统内存工作集', h('div.row', null, freeMemSwitch, freeNow), true),
         row('全屏启动', '游戏以全屏模式打开', fsSwitch),
-        row('关闭启动器时', '最小化：保留在任务栏；直接退出：关闭启动器（正在运行的游戏窗口不受影响）',
-          segGroup(['ask', 'minimize', 'close'], ['每次询问', '最小化', '直接退出'], s.closeAction || 'ask', (v) => set({ closeAction: v })), true),
+        row('关闭启动器时', '最小化按钮：最小化到任务栏；关闭按钮选择「最小化到托盘」才会隐藏到托盘；正在运行的游戏窗口不受影响',
+          segGroup(['ask', 'minimize', 'close'], ['每次询问', '最小化到托盘', '直接退出'], s.closeAction || 'ask', (v) => set({ closeAction: v })), true),
+        row('启动游戏后', '自动隐藏启动器到系统托盘；所有游戏实例都退出后自动恢复窗口', autoHideSwitch),
         row('JVM 参数', '附加到 java 命令后，谨慎修改', jvmInput, true),
       ),
     );
@@ -158,7 +160,6 @@
       listBox.append(h('div.faint', { style: { wordBreak: 'break-all' } }, `手动指定：${s.javaPath}`));
     }
     const clearBtn = h('button.btn.btn-ghost.btn-xs', { onclick: () => set({ javaPath: '' }).then(() => renderAll()) }, '清除手动指定');
-    if (s.javaPath) detectBtn.parentElement.append(clearBtn);
 
     const listBtn = h('button.btn.btn-sm.pressable', { onclick: () => window.JavaPicker.open(s.javaPath, (p) => { set({ javaPath: p }).then(renderAll); }) }, '📋 从列表选择');
     const pickBtn = h('button.btn.btn-sm.pressable', { onclick: async () => {
@@ -202,7 +203,7 @@
     drawJavaList();
 
     return h('div.card', null,
-      h('div.card-head', null, h('div.card-title', null, 'Java 运行时'), h('span.spacer'), detectBtn, listBtn, pickBtn),
+      h('div.card-head', null, h('div.card-title', null, 'Java 运行时'), h('span.spacer'), s.javaPath ? clearBtn : null, detectBtn, listBtn, pickBtn),
       h('div.card-body', null, listBox),
     );
   }

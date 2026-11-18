@@ -163,7 +163,9 @@
         action.textContent = '修复';
       }
     } catch (e) {
-      window.Toast.error(e.message.replace(/^Error: /, ''));
+      const msg = e.message.replace(/^Error: /, '');
+      if (/取消/.test(msg)) window.Toast.info('已取消安装');
+      else window.Toast.error(msg);
       action.disabled = false;
       action.textContent = '重试';
     } finally {
@@ -563,6 +565,13 @@
       window.app.goto('versions');
     } catch (e) {
       onLoaderSub(); onInstallSub();
+      const errMsg = String(e.message || e).replace(/^Error: /, '');
+      if (/取消/.test(errMsg)) {
+        window.Tasks && window.Tasks.fail('创建实例 ' + (sel.name || sel.mc), '已取消');
+        try { modalRef.close(false); } catch {}
+        window.Toast.info('已取消创建实例');
+        return;
+      }
       window.Tasks && window.Tasks.fail('创建实例 ' + (sel.name || sel.mc), e.message);
       if (!document.body.contains(el)) {
         window.TaskCard.finish(false, '实例创建失败');

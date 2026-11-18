@@ -4,12 +4,20 @@
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; img-src 'self' data: smcl-wall: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https:; font-src 'self' data:" />
-  <title>星启 STMCL</title>
+  <title>STMCL</title>
+  <style>
+html, body { background: #0b0e14; color: #e9edf5; }
+#bootSplash { position: fixed; inset: 0; z-index: 99999; background: #0b0e14; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; color: #e9edf5; }
+#bootSplash .boot-logo { font-size: 20px; font-weight: 700; letter-spacing: .08em; }
+#bootSplash .boot-spinner { width: 26px; height: 26px; border-radius: 50%; border: 3px solid rgba(255,255,255,.16); border-top-color: #1668dc; animation: bootspin .8s linear infinite; }
+@keyframes bootspin { to { transform: rotate(360deg); } }
+</style>
   <link rel="stylesheet" href="css/base.css" />
   <link rel="stylesheet" href="css/components.css" />
   <link rel="stylesheet" href="css/pages.css" />
 </head>
 <body>
+  <div id="bootSplash"><div class="boot-logo">星启 STMCL</div><div class="boot-spinner"></div></div>
   <!-- 壁纸层：图片 + 四种蒙版 -->
   <div id="wallpaper" class="wallpaper" hidden>
     <div class="wallpaper-img" id="wallpaperImg"></div>

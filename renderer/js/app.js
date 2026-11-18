@@ -338,6 +338,12 @@
     // 渲染首页
     Pages.home.render(document.querySelector('.view[data-view="home"]'));
 
+    // 首帧画完再通知主进程显示窗口，避免启动瞬间白屏
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      try { document.getElementById('bootSplash')?.remove(); } catch {}
+      try { window.smcl.uiReady && window.smcl.uiReady(); } catch {}
+    }));
+
     // 并行加载数据
     window.app.refreshInstalled();
     window.smcl.detectJava().then((l) => window.Store.set({ javaList: l })).catch(() => {});
@@ -417,7 +423,8 @@
         c.classList.add(ok ? 'done' : 'fail');
         document.getElementById('taskName').textContent = text || (ok ? '任务完成' : '任务失败');
         document.getElementById('taskBar').style.width = '100%';
-        setTimeout(() => { c.hidden = true; }, ok ? 2600 : 4200);
+        const cancelled = !ok && /取消/.test(String(text || ''));
+        setTimeout(() => { c.hidden = true; }, cancelled ? 700 : ok ? 2600 : 4200);
       },
     };
     window.TaskCard = TaskCard;
@@ -488,7 +495,7 @@
     window.smcl.onPack((p) => { Pages.packs.onProgress && Pages.packs.onProgress(p); });
     window.smcl.onPack(taskFrom((p) => '导入整合包 ' + (p.name || ''), () => '本地'));
     window.smcl.onPack(taskFrom((p) => '导入整合包 ' + (p.name || '')));
-    window.smcl.onContentProgress(taskFrom((p) => '下载资源', (p) => (p && p.source === 'curseforge' ? 'CurseForge' : 'Modrinth')));
+    window.smcl.onContentProgress(taskFrom((p) => '下载资源 ' + String((p && p.projectId) || '').slice(0, 8), (p) => (p && p.source === 'curseforge' ? 'CurseForge' : 'Modrinth')));
     window.smcl.onSavesProgress((p) => Pages.saves.onProgress && Pages.saves.onProgress(p));
 
     // ---------- 事件：版本体积 ----------
@@ -545,7 +552,7 @@
         title: '关闭启动器',
         dismissible: false, // 必须明确选择，避免误触把状态卡死
         body: (el) => el.append(
-          h('div', { style: { fontSize: '13.5px', lineHeight: '1.65' } }, '要最小化启动器，还是直接退出？'),
+          h('div', { style: { fontSize: '13.5px', lineHeight: '1.65' } }, '要隐藏到系统托盘，还是直接退出？'),
           h('div.faint', { style: { marginTop: '6px' } }, '已启动的游戏窗口不会被关闭。'),
           h('label.row', { style: { marginTop: '14px', gap: '8px', cursor: 'pointer', fontSize: '12.5px' } },
             remember,
@@ -554,7 +561,7 @@
         ),
         footer: [
           h('button.btn', { onclick: () => choose('cancel') }, '取消'),
-          h('button.btn', { onclick: () => choose('minimize') }, '最小化'),
+          h('button.btn', { onclick: () => choose('minimize') }, '最小化到托盘'),
           h('button.btn.btn-primary', { onclick: () => choose('close') }, '直接退出'),
         ],
       });
@@ -837,7 +844,7 @@
         if (!list.length) {
           try { list = await window.smcl.detectJava(); window.Store.set({ javaList: list }); } catch {}
         }
-        window.Modal.open({
+        api = window.Modal.open({
           title: '选择 Java 版本',
           size: 'lg',
           body: (el) => {

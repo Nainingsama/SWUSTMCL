@@ -18,7 +18,13 @@ const KINDS = {
 };
 
 function gameDirOf(dir, id) {
-  const inst = safe.safeJoin(path.join(dir, 'versions'), id);
+  let inst = safe.safeJoin(path.join(dir, 'versions'), id);
+  try {
+    if (!fs.existsSync(path.join(inst, id + '.json'))) {
+      const direct = safe.safeJoin(dir, id);
+      if (fs.existsSync(path.join(direct, id + '.json'))) inst = direct;
+    }
+  } catch {}
   return dirs.isIsolatedInstance(inst) ? inst : dir;
 }
 

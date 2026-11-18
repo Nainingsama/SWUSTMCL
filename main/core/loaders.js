@@ -276,10 +276,11 @@ async function installForgeLike(loader, mc, loaderVersion, instanceId, source, o
   report({ stage: 'run', message: '运行安装器（可能需要几分钟）', percent: 40 });
 
   // Forge 安装器需要的 Java 版本：1.17+ 需要 16+，1.13~1.16 需要 8~11
-  const javas = await javaLib.detect({ mcDirs: [mcDir] });
+  const s = settingsLib.all();
+  const javas = await javaLib.detect({ mcDirs: [mcDir], preferred: s.javaPath || '', deep: true });
   const needMajor = pickInstallerJavaMajor(mc);
   const jvm = javaLib.pick(javas, needMajor) || javas[0];
-  if (!jvm) throw new Error('未找到可用的 Java，请先在设置里确认 Java 检测结果');
+  if (!jvm) throw new Error('未找到可用的 Java，请先在设置里指定 java.exe（支持 D 盘等非系统盘）');
 
   // Forge/NeoForge 安装器要求存在 launcher_profiles.json（纯净目录里没有）
   try {

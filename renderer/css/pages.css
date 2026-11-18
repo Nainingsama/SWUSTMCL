@@ -402,13 +402,7 @@ body.theme-light .cal-cell:not(.empty):hover { background: rgba(20, 30, 50, 0.08
 .home-widget > .card { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; margin: 0; }
 .home-widget .card-body { overflow: auto; flex: 1; min-height: 0; }
 .home-widget .launch-inner { flex: 1; min-height: 0; overflow: hidden; }
-.widget-head { cursor: grab; user-select: none; }
-.widget-head:active { cursor: grabbing; }
-.widget-grip { opacity: 0.45; letter-spacing: 2px; font-size: 13px; flex: none; }
-.home-widget:hover .widget-grip { opacity: 0.95; }
-.widget-resize { position: absolute; right: 1px; bottom: 1px; width: 18px; height: 18px; cursor: nwse-resize; z-index: 3; }
-.widget-resize::after { content: ''; position: absolute; right: 4px; bottom: 4px; width: 8px; height: 8px; border-right: 2px solid var(--text-faint); border-bottom: 2px solid var(--text-faint); opacity: 0.5; }
-.home-widget:hover .widget-resize::after { opacity: 1; }
+.widget-head { cursor: default; user-select: none; }
 
 /* 浮层（实例 / 账户选择） */
 .float-panel { position: fixed; z-index: 70; background: rgba(20, 26, 38, 0.98); border: 1px solid var(--card-border-strong); border-radius: 14px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5); padding: 10px; }
@@ -578,9 +572,10 @@ body:not(.theme-light) .input::placeholder, body:not(.theme-light) textarea.inpu
 .clock-card .card-body { display: flex; flex-direction: column; justify-content: center; gap: 6px; }
 .clock-date { font-size: 24px; font-weight: 700; letter-spacing: 0.02em; }
 .clock-time-row { display: flex; align-items: baseline; gap: 10px; }
-.clock-time { font-family: Consolas, monospace; font-size: 17px; color: var(--text-dim); letter-spacing: 0.06em; }
-.clock-tz { font-size: 12px; color: var(--text-faint); }
-.clock-slogan { font-size: 13px; color: var(--text-faint); margin-top: 6px; }
+.clock-time { font-family: Consolas, monospace; font-size: 21px; color: var(--text); letter-spacing: 0.05em; }
+.clock-tz { font-size: 13px; color: var(--text-dim); }
+.clock-weekday { font-size: 13.5px; font-weight: 650; color: var(--accent); }
+.clock-slogan { font-size: 14px; color: var(--text-dim); margin-top: 6px; }
 
 /* 日历：参考图样式——格子带圆角底、整月自适应不滚动 */
 .cal-card .cal-grid {
@@ -839,3 +834,13 @@ body.theme-light .res-instance-row > .field-hint {
 .announce-more:hover { text-decoration: underline; }
 .announce-modal-list { display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow-y: auto; padding-right: 4px; }
 .announce-modal-item { font-size: 13px; line-height: 1.65; color: var(--text-dim); word-break: break-word; }
+
+/* 整合包导出内容选择 */
+.export-title { margin: 16px 0 6px; font-size: 12.5px; font-weight: 650; color: var(--text-dim); }
+.export-check { display: flex; align-items: flex-start; gap: 10px; padding: 7px 8px; border-radius: 9px; cursor: pointer; user-select: none; }
+.export-check:hover { background: rgba(255, 255, 255, 0.05); }
+.export-check.child { margin-left: 26px; }
+.export-check.disabled { opacity: 0.55; cursor: default; }
+.export-check.disabled:hover { background: none; }
+.export-check-label { font-size: 13px; font-weight: 550; color: var(--text); }
+body.theme-light .export-check:hover { background: rgba(20, 30, 50, 0.05); }
