@@ -540,6 +540,10 @@ app.whenReady().then(async () => {
   try {
     if (app.isPackaged) {
       const exe = process.execPath;
+      // 清理旧品牌文件（不影响当前 STMCL.exe / Uninstall STMCL.exe）
+      for (const legacy of ['SWUSTMCL.exe', 'Uninstall SWUSTMCL.exe']) {
+        try { fs.unlinkSync(path.join(path.dirname(exe), legacy)); } catch {}
+      }
       const lnk = path.join(app.getPath('desktop'), 'STMCL.lnk');
       // 清理旧品牌 / 指向旧 exe 的历史快捷方式（桌面含子文件夹）
       let removedLegacy = false;
