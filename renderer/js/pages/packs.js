@@ -13,6 +13,9 @@
     mods: true, modConfig: true, bodySettings: true,
     personal: false, maps: false, screenshots: false, servers: false, resources: false,
   };
+  let exportConfigPreset = (() => {
+    try { return JSON.parse(localStorage.getItem('swustmcl.exportConfig') || 'null'); } catch { return null; }
+  })();
   let exportPreset = (() => {
     try { return { ...EXPORT_DEFAULTS, ...(JSON.parse(localStorage.getItem(EXPORT_PRESET_KEY) || '{}') || {}) }; }
     catch { return { ...EXPORT_DEFAULTS }; }
@@ -67,7 +70,7 @@
               exportVersion = h('input.input', { value: exportPreset.packVersion || '1.0.0' }),
             ),
           ),
-          h('div.export-title', null, '导出内容列表'),
+          h('div.export-title', null, '导出内容列表', exportConfigPreset ? h('span.badge.badge-green', { style: { marginLeft: '8px' } }, `已加载配置 · ${exportConfigPreset.includes.length} 项 / 排除 ${exportConfigPreset.excludes.length}`) : null),
           exportCheckRow('游戏本体', '正式版与加载器由启动器在导入时自动安装', true, () => {}, 0, true),
           exportCheckRow('游戏本体设置', '键位、音量、视频设置等（options.txt）', exportPreset.bodySettings, (v) => { exportOpts.bodySettings = v; }, 1),
           exportCheckRow('游戏本体个人信息', '命令历史、已保存的快捷栏等', exportPreset.personal, (v) => { exportOpts.personal = v; }, 1),
@@ -79,6 +82,17 @@
           exportCheckRow('资源包与光影', 'resourcepacks / shaderpacks', exportPreset.resources, (v) => { exportOpts.resources = v; }, 0),
           h('div.row.mt-12', { style: { gap: '8px', flexWrap: 'wrap' } },
             h('button.btn.btn-primary.pressable', { onclick: () => exportFlow(exportSel, exportName, exportVersion, exportOpts) }, '生成导出计划'),
+            h('button.btn.btn-ghost.btn-sm.pressable', { onclick: async () => {
+              try {
+                const cfg = await window.smcl.pickExportConfig();
+                if (!cfg) return;
+                exportConfigPreset = cfg;
+                try { localStorage.setItem('swustmcl.exportConfig', JSON.stringify(cfg)); } catch {}
+                render(rootEl);
+                window.Toast.success(`已加载配置：${cfg.includes.length} 项包含 / ${cfg.excludes.length} 项排除`);
+              } catch (e) { window.Toast.error(e.message); }
+            } }, exportConfigPreset ? '重新读取配置' : '读取 PCL 导出配置'),
+            exportConfigPreset ? h('button.btn.btn-ghost.btn-sm.pressable', { onclick: () => { exportConfigPreset = null; try { localStorage.removeItem('swustmcl.exportConfig'); } catch {} render(rootEl); } }, '清除配置') : null,
             h('button.btn.btn-ghost.btn-sm.pressable', { onclick: openExportGuide }, '整合包制作指南'),
           ),
           h('div#exportPlanBox'),
@@ -263,8 +277,9 @@
     if (!id) return window.Toast.warn('没有可导出的实例');
     const options = {
       ...opts,
-      packName: String((nameInp && nameInp.value) || '').trim() || id,
-      packVersion: String((verInp && verInp.value) || '').trim() || '1.0.0',
+      config: exportConfigPreset ? { meta: exportConfigPreset.meta, includes: exportConfigPreset.includes, excludes: exportConfigPreset.excludes } : null,
+      packName: String((nameInp && nameInp.value) || '').trim() || (exportConfigPreset && exportConfigPreset.meta && exportConfigPreset.meta.Name) || id,
+      packVersion: String((verInp && verInp.value) || '').trim() || (exportConfigPreset && exportConfigPreset.meta && exportConfigPreset.meta.Version) || '1.0.0',
     };
     try {
       savePreset(nameInp, verInp, opts);

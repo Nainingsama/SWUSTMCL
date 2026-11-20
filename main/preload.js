@@ -73,6 +73,7 @@ contextBridge.exposeInMainWorld('smcl', {
   inspectPack: (file) => ipcRenderer.invoke('modpack:inspect', { file }),
   installPack: (file, name) => ipcRenderer.invoke('modpack:install', { file, name: name || '' }),
   onPack: (cb) => on('modpack:progress', cb),
+  pickExportConfig: () => ipcRenderer.invoke('pack:pickExportConfig'),
   exportPlan: (id, dir, options) => ipcRenderer.invoke('pack:exportPlan', { id, dir, options }),
   exportPick: (defaultName, format) => ipcRenderer.invoke('pack:exportPick', { defaultName, format }),
   exportPack: (id, dest, dir, format, options) => ipcRenderer.invoke('pack:export', { id, dir, dest, format, options }),

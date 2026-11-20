@@ -69,7 +69,13 @@
         message: msg,
         detail: '可以手动下载安装包（已套用 GitHub 加速前缀），下载完直接安装/覆盖即可。',
         okText: '打开下载页',
-      }).then((ok) => { if (ok) window.smcl.openUrl(mirrored).catch(() => {}); });
+      }).then(async (ok) => {
+        if (!ok) return;
+        for (const u of [mirrored, assetUrl, r.htmlUrl].filter(Boolean)) {
+          try { await window.smcl.openUrl(u); return; } catch {}
+        }
+        window.Toast.error('无法打开浏览器，请手动访问 ' + (r.htmlUrl || assetUrl || 'GitHub Releases'));
+      });
     }
   }
 
@@ -290,7 +296,13 @@
                       message: msg,
                       detail: '可以手动下载安装包（已套用 GitHub 加速前缀），下载完直接安装/覆盖即可。',
                       okText: '打开下载页',
-                    }).then((ok) => { if (ok) window.smcl.openUrl(mirrored).catch(() => {}); });
+                    }).then(async (ok) => {
+                      if (!ok) return;
+                      for (const u of [mirrored, assetUrl, r.htmlUrl].filter(Boolean)) {
+                        try { await window.smcl.openUrl(u); return; } catch {}
+                      }
+                      window.Toast.error('无法打开浏览器，请手动访问 ' + (r.htmlUrl || assetUrl || 'GitHub Releases'));
+                    });
                   }
                 },
               }, '下载并安装')

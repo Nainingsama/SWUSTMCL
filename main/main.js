@@ -1454,6 +1454,18 @@ ipcMain.handle('modpack:install', async (_e, payload) => {
 });
 
 // ---------- 整合包导出 ----------
+ipcMain.handle('pack:pickExportConfig', async () => {
+  const r = await dialog.showOpenDialog(win, {
+    title: '选择 PCL 导出配置文件',
+    properties: ['openFile'],
+    filters: [{ name: '导出配置', extensions: ['txt'] }],
+  });
+  if (r.canceled || !r.filePaths.length) return null;
+  const file = r.filePaths[0];
+  const cfg = core.modpack.parseExportConfig(fs.readFileSync(file, 'utf8'));
+  return { file, ...cfg };
+});
+
 ipcMain.handle('pack:exportPlan', (_e, payload) => {
   const id = core.safe.assertVersionId(String((payload && payload.id) || ''));
   const dir = String((payload && payload.dir) || '');
@@ -2248,20 +2260,26 @@ ipcMain.handle('update:check', async (_e, opts = {}) => {
   return r;
 });
 
+let updateInstallPromise = null;
 ipcMain.handle('update:install', async (_e, payload) => {
   const asset = payload && payload.asset;
   if (!asset || !core.safe.isHttpUrl(asset.url, ['github.com', 'objects.githubusercontent.com'])) {
     throw new Error('更新地址无效');
   }
-  requireIdle('update', '更新');
+  // 重复点击复用同一个下载任务，不再报「已有更新任务在进行」
+  if (updateInstallPromise) return updateInstallPromise;
   busy.update = true;
-  try {
-    const r = await core.updater.install(asset, (p) => send('update:progress', p));
-    setTimeout(() => app.exit(0), 1200);
-    return r;
-  } finally {
-    busy.update = null;
-  }
+  updateInstallPromise = (async () => {
+    try {
+      const r = await core.updater.install(asset, (p) => send('update:progress', p));
+      setTimeout(() => app.exit(0), 1200);
+      return r;
+    } finally {
+      busy.update = null;
+      updateInstallPromise = null;
+    }
+  })();
+  return updateInstallPromise;
 });
 
 // ---------- 日志 ----------

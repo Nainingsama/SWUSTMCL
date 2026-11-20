@@ -129,7 +129,7 @@ const GAME_HOSTS = [
 const PACK_HOSTS = ['modrinth.com', 'forgecdn.net', 'curseforge.com', 'cdn.modrinth.com', 'github.com', 'objects.githubusercontent.com'];
 
 /** 允许展示的外链（浏览器打开） */
-const PAGE_HOSTS = ['minecraft.net', 'modrinth.com', 'curseforge.com', 'github.com', 'microsoft.com', 'live.com', 'xbox.com', 'bangbang93.com', 'swust.edu.cn', 'ynet.com'];
+const PAGE_HOSTS = ['minecraft.net', 'modrinth.com', 'curseforge.com', 'github.com', 'microsoft.com', 'live.com', 'xbox.com', 'bangbang93.com', 'swust.edu.cn', 'ynet.com', 'gh-proxy.com', 'ghproxy.net', 'ghfast.top'];
 
 module.exports = {
   RESERVED, GAME_HOSTS, PACK_HOSTS, PAGE_HOSTS,

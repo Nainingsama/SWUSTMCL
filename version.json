@@ -1,18 +1,18 @@
 {
-  "version": "1.2.10",
-  "notes": "1.2.10：系统托盘与游戏自动隐藏、下载队列与取消清理、可选内容整合包导出（含任务书，兼容 PCL/HMCL/YMCL）、启动防白屏、Java 选择与非 C 盘检测修复、默认隔离实例中文修复。",
+  "version": "1.2.11",
+  "notes": "1.2.11：支持 PCL 导出配置；修复更新弹窗打不开下载页、重复更新任务报错、便携包旧目录名；安装器仅当前用户并支持卸载删除数据。",
   "assets": [
     {
-      "name": "STMCL-1.2.10-win-x64.zip",
-      "size": 124726907,
-      "sha256": "5afe75a6645b1b11551b36316550f6898607bd63c64f85286a0c3ba3a09f49f7",
-      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.10/STMCL-1.2.10-win-x64.zip"
+      "name": "STMCL-1.2.11-win-x64.zip",
+      "size": 124727670,
+      "sha256": "73324c7f7cf1c856c71dd4d4be9289cdb67d3ebbdc6debf49788b62905112a53",
+      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.11/STMCL-1.2.11-win-x64.zip"
     },
     {
-      "name": "STMCL-1.2.10-Setup-x64.exe",
-      "size": 94421976,
-      "sha256": "6f6a1a3fd68fe45477b7ba634e18a625d646f3b1790204a83b7f531f7157507a",
-      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.10/STMCL-1.2.10-Setup-x64.exe"
+      "name": "STMCL-1.2.11-Setup-x64.exe",
+      "size": 94423449,
+      "sha256": "792088a2b6f226f2e5db09df2ec4e8d493ef7525dd2b27ae839d59b483e44f03",
+      "url": "https://github.com/Nainingsama/SWUSTMCL/releases/download/v1.2.11/STMCL-1.2.11-Setup-x64.exe"
     }
   ]
 }

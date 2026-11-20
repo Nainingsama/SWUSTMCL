@@ -133,11 +133,11 @@ async function main() {
   const zipPath = path.join(dist, zipName);
   const AdmZip = require('adm-zip');
   const zip = new AdmZip();
-  // 平铺：解压即得 SWUSTMCL/ 目录
+  // 平铺：解压即得 STMCL/ 目录
   for (const ent of fs.readdirSync(stage, { withFileTypes: true })) {
     const full = path.join(stage, ent.name);
-    if (ent.isDirectory()) zip.addLocalFolder(full, `SWUSTMCL/${ent.name}`);
-    else zip.addLocalFile(full, 'SWUSTMCL', ent.name);
+    if (ent.isDirectory()) zip.addLocalFolder(full, `STMCL/${ent.name}`);
+    else zip.addLocalFile(full, 'STMCL', ent.name);
   }
   zip.writeZip(zipPath);
 

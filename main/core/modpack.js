@@ -458,6 +458,82 @@ function exportPaths(options = {}) {
   return [...new Set(out)];
 }
 
+/** 解析 PCL 导出配置（export_config_*.txt）：路径清单 + ! 排除规则 */
+function parseExportConfig(text) {
+  const meta = {};
+  const includes = [];
+  const excludes = [];
+  let inList = false;
+  for (const raw of String(text || '').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (/^=+$/.test(line)) { inList = true; continue; }
+    if (!inList) {
+      const i = line.indexOf(':');
+      if (i > 0) meta[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+      continue;
+    }
+    if (line.startsWith('!')) excludes.push(line.slice(1).trim());
+    else includes.push(line.trim());
+  }
+  return { meta, includes, excludes };
+}
+
+function normExportPattern(p) {
+  const bs = String.fromCharCode(92);
+  return String(p || '').split(bs).join('/').replace(/^\.\//, '').replace(/\/+$/, '');
+}
+
+function globToRe(glob) {
+  const bs = String.fromCharCode(92);
+  return glob.split('*').map((part) => {
+    return part.split('').map((ch) => {
+      if (ch === '?') return '.';
+      if ('^$+()[]{}|.'.includes(ch)) return bs + ch;
+      return ch;
+    }).join('');
+  }).join('[^/]*');
+}
+
+function includeMatches(file, pattern) {
+  const p = normExportPattern(pattern);
+  if (!p) return false;
+  if (p.includes('*')) {
+    try { return new RegExp('^' + globToRe(p) + '($|/)').test(file); } catch { return false; }
+  }
+  return file === p || file.startsWith(p + '/');
+}
+
+function excludeMatches(file, pattern) {
+  const raw = String(pattern || '').trim();
+  const dir = /\/$/.test(raw);
+  const p = normExportPattern(raw);
+  if (!p) return false;
+  if (p.includes('*')) {
+    try { return new RegExp('^' + globToRe(p) + (dir ? '($|/)' : '$')).test(file); } catch { return false; }
+  }
+  return file === p || (dir && file.startsWith(p + '/'));
+}
+
+function collectAllFiles(dir) {
+  const out = [];
+  const walk = (d, rel, depth) => {
+    if (depth > 12) return;
+    let ents = [];
+    try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of ents) {
+      const r = rel ? rel + '/' + e.name : e.name;
+      const abs = path.join(d, e.name);
+      if (e.isDirectory()) walk(abs, r, depth + 1);
+      else if (e.isFile()) {
+        try { out.push({ path: r, size: fs.statSync(abs).size }); } catch {}
+      }
+    }
+  };
+  walk(dir, '', 0);
+  return out;
+}
+
 
 /**
  * 生成导出计划：列出会被打包的文件与体积，让用户确认。
@@ -482,12 +558,23 @@ function exportPlan(mcDir, instanceId, dirOverride, options = {}) {
     } catch {}
   };
 
-  for (const name of exportPaths(options)) {
-    const abs = path.join(dir, name);
-    if (!fs.existsSync(abs)) continue;
-    const st = fs.statSync(abs);
-    if (st.isFile()) add(name, abs);
-    else walkCollect(abs, name, files, add, 0);
+  const custom = options.config && Array.isArray(options.config.includes) && options.config.includes.length ? options.config : null;
+  if (custom) {
+    const inc = custom.includes.map(normExportPattern).filter(Boolean);
+    const exc = (custom.excludes || []).map(normExportPattern).filter(Boolean);
+    for (const f of collectAllFiles(dir)) {
+      if (!inc.some((p) => includeMatches(f.path, p))) continue;
+      if (exc.some((p) => excludeMatches(f.path, p))) continue;
+      files.push(f);
+    }
+  } else {
+    for (const name of exportPaths(options)) {
+      const abs = path.join(dir, name);
+      if (!fs.existsSync(abs)) continue;
+      const st = fs.statSync(abs);
+      if (st.isFile()) add(name, abs);
+      else walkCollect(abs, name, files, add, 0);
+    }
   }
 
   let loader = '', loaderVersion = '', mcVersion = '';
@@ -540,8 +627,8 @@ function exportPlan(mcDir, instanceId, dirOverride, options = {}) {
   return {
     id: instanceId,
     dir, // 实例实际所在目录（跨目录实例也正确）
-    packName: String(options.packName || instanceId),
-    packVersion: String(options.packVersion || '1.0.0'),
+    packName: String(options.packName || (custom && custom.meta && custom.meta.Name) || instanceId),
+    packVersion: String(options.packVersion || (custom && custom.meta && custom.meta.Version) || '1.0.0'),
     options,
     questFiles,
     files,
@@ -677,4 +764,4 @@ function sha1Of(file) {
   }
 }
 
-module.exports = { inspect, importPack, exportPlan, exportPack, uniqueInstanceId };
+module.exports = { inspect, importPack, exportPlan, exportPack, uniqueInstanceId, parseExportConfig, includeMatches, excludeMatches, collectAllFiles, normExportPattern };
